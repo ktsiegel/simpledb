@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The Catalog keeps track of all available tables in the database and their
@@ -12,8 +13,9 @@ import java.util.*;
  * For now, this is a stub catalog that must be populated with tables by a
  * user program before it can be used -- eventually, this should be converted
  * to a catalog that reads a catalog table from disk.
+ * 
+ * @Threadsafe
  */
-
 public class Catalog {
 
     /**
@@ -38,7 +40,7 @@ public class Catalog {
     }
 
     public void addTable(DbFile file, String name) {
-        addTable(file,name,"");
+        addTable(file, name, "");
     }
 
     /**
@@ -47,17 +49,16 @@ public class Catalog {
      * contents are stored in the specified DbFile.
      * @param file the contents of the table to add;  file.getId() is the identfier of
      *    this file/tupledesc param for the calls getTupleDesc and getFile
-     * @param t the format of tuples that are being added
      */
-    /*public void addTable(DbFile file) {
-        addTable(file, (new UUID()).toString());
-    }*/
+    public void addTable(DbFile file) {
+        addTable(file, (UUID.randomUUID()).toString());
+    }
 
     /**
      * Return the id of the table with a specified name,
      * @throws NoSuchElementException if the table doesn't exist
      */
-    public int getTableId(String name) {
+    public int getTableId(String name) throws NoSuchElementException {
         // some code goes here
         return 0;
     }
@@ -66,6 +67,7 @@ public class Catalog {
      * Returns the tuple descriptor (schema) of the specified table
      * @param tableid The id of the table, as specified by the DbFile.getId()
      *     function passed to addTable
+     * @throws NoSuchElementException if the table doesn't exist
      */
     public TupleDesc getTupleDesc(int tableid) throws NoSuchElementException {
         // some code goes here
@@ -78,14 +80,9 @@ public class Catalog {
      * @param tableid The id of the table, as specified by the DbFile.getId()
      *     function passed to addTable
      */
-    public DbFile getDbFile(int tableid) throws NoSuchElementException {
+    public DbFile getDatabaseFile(int tableid) throws NoSuchElementException {
         // some code goes here
         return null;
-    }
-
-    /** Delete all tables from the catalog */
-    public void clear() {
-        // some code goes here
     }
 
     public String getPrimaryKey(int tableid) {
@@ -103,15 +100,21 @@ public class Catalog {
         return null;
     }
     
+    /** Delete all tables from the catalog */
+    public void clear() {
+        // some code goes here
+    }
+    
     /**
      * Reads the schema from a file and creates the appropriate tables in the database.
      * @param catalogFile
      */
     public void loadSchema(String catalogFile) {
         String line = "";
+        String baseFolder=new File(new File(catalogFile).getAbsolutePath()).getParent();
         try {
             BufferedReader br = new BufferedReader(new FileReader(new File(catalogFile)));
-
+            
             while ((line = br.readLine()) != null) {
                 //assume line is of the format name (field type, field type, ...)
                 String name = line.substring(0, line.indexOf("(")).trim();
@@ -144,7 +147,7 @@ public class Catalog {
                 Type[] typeAr = types.toArray(new Type[0]);
                 String[] namesAr = names.toArray(new String[0]);
                 TupleDesc t = new TupleDesc(typeAr, namesAr);
-                HeapFile tabHf = new HeapFile(new File(name + ".dat"), t);
+                HeapFile tabHf = new HeapFile(new File(baseFolder+"/"+name + ".dat"), t);
                 addTable(tabHf,name,primaryKey);
                 System.out.println("Added table : " + name + " with schema " + t);
             }

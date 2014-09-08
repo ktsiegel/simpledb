@@ -24,7 +24,7 @@ public class HeapPageId implements PageId {
      * @return the page number in the table getTableId() associated with
      *   this PageId
      */
-    public int pageno() {
+    public int pageNumber() {
         // some code goes here
         return 0;
     }
@@ -62,7 +62,7 @@ public class HeapPageId implements PageId {
         int data[] = new int[2];
 
         data[0] = getTableId();
-        data[1] = pageno();
+        data[1] = pageNumber();
 
         return data;
     }
