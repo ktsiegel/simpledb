@@ -29,7 +29,7 @@ public interface DbFile {
     public void writePage(Page p) throws IOException;
 
     /**
-     * Adds the specified tuple to the file on behalf of transaction.
+     * Inserts the specified tuple to the file on behalf of transaction.
      * This method will acquire a lock on the affected pages of the file, and
      * may block until the lock can be acquired.
      *
@@ -40,20 +40,24 @@ public interface DbFile {
      * @throws DbException if the tuple cannot be added
      * @throws IOException if the needed file can't be read/written
      */
-    public ArrayList<Page> addTuple(TransactionId tid, Tuple t)
+    public ArrayList<Page> insertTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException;
 
     /**
-     * Removes the specifed tuple from the file on behalf of the specified
+     * Removes the specified tuple from the file on behalf of the specified
      * transaction.
      * This method will acquire a lock on the affected pages of the file, and
      * may block until the lock can be acquired.
      *
+     * @param tid The transaction performing the update
+     * @param t The tuple to delete.  This tuple should be updated to reflect that
+     *          it is no longer stored on any page.
+     * @return An ArrayList contain the pages that were modified
      * @throws DbException if the tuple cannot be deleted or is not a member
      *   of the file
      */
-    public Page deleteTuple(TransactionId tid, Tuple t)
-        throws DbException, TransactionAbortedException;
+    public ArrayList<Page> deleteTuple(TransactionId tid, Tuple t)
+        throws DbException, IOException, TransactionAbortedException;
 
     /**
      * Returns an iterator over all the tuples stored in this DbFile. The
@@ -66,7 +70,7 @@ public interface DbFile {
 
     /**
      * Returns a unique ID used to identify this DbFile in the Catalog. This id
-     * can be used to look up the table via {@link Catalog#getDbFile} and
+     * can be used to look up the table via {@link Catalog#getDatabaseFile} and
      * {@link Catalog#getTupleDesc}.
      * <p>
      * Implementation note:  you will need to generate this tableid somewhere,
