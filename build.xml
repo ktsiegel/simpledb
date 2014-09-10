@@ -292,17 +292,5 @@
         <fail if="junit.failed" message="Some JUnit tests failed"/>
     </target>
     
-    <target name="handin" depends="clean"
-        description="Create a tarball of your code to hand in">
-        <tar destfile="lab-handin.tar.bz2" compression="bzip2"
-            basedir="." />
-        <echo message="Tarball created!  Please submit 'lab-handin.tar.bz2' per the instructions in the lab document." />
-    <subant target="dist">
-        <fileset dir="." includes="build.xml"/>
-    </subant>
-    </target>
-
-    <target name="test-and-handin" depends="test,systemtest,handin"
-        description="Run all the tests and system tests; if they succeed, create a tarball of the source code to submit" />
 
 </project>
