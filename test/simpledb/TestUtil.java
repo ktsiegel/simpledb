@@ -260,6 +260,7 @@ public class TestUtil {
         }
 
         public void open() {
+	    cur = low;
         }
 
         public void close() {
