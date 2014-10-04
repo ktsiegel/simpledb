@@ -71,72 +71,15 @@ public class StringAggregator implements Aggregator {
      *   aggregate specified in the constructor.
      */
     public DbIterator iterator() {
-        return new StringAggregatorIterator();
-    }
-
-    public class StringAggregatorIterator implements DbIterator {
-    	
-    	private static final long serialVersionUID = 1L;
-		private boolean open;
-    	private ArrayList<Object> keys;
-    	int index = 0;
-    	
-    	public StringAggregatorIterator() {
-    		this.open = false;
-    		this.keys = new ArrayList<Object>();
-    		this.keys.addAll(StringAggregator.this.aggregate.keySet());
+    	Type[] types = new Type[]{Type.INT_TYPE,Type.INT_TYPE};
+    	TupleDesc desc = new TupleDesc(types);
+    	ArrayList<Tuple> results = new ArrayList<Tuple>();
+    	for (Object key : this.aggregate.keySet()) {
+    		Tuple newTuple = new Tuple(desc);
+    		newTuple.setField(0, (Field)key);
+    		newTuple.setField(1, new IntField(this.aggregate.get(key)));
+    		results.add(newTuple);
     	}
-
-		@Override
-		public void open() throws DbException, TransactionAbortedException {
-			this.open = true;
-			this.index = 0;
-		}
-
-		@Override
-		public boolean hasNext() throws DbException,
-				TransactionAbortedException {
-			if (!this.open || this.index >= keys.size()) return false;
-			return true;
-		}
-
-		@Override
-		public Tuple next() throws DbException, TransactionAbortedException,
-				NoSuchElementException {
-			if (this.hasNext()) {
-				Object field = this.keys.get(this.index);
-				Tuple ntuple = new Tuple(this.getTupleDesc());
-				if (field instanceof Field) {
-					ntuple.setField(0,(Field)field);
-					ntuple.setField(1, new IntField((Integer)StringAggregator.this.aggregate.get(field)));
-				} else {
-					ntuple.setField(0, new IntField((Integer)StringAggregator.this.aggregate.get(field)));
-				}
-				this.index++;
-				return ntuple;
-			}
-			return null;
-		}
-
-		@Override
-		public void rewind() throws DbException, TransactionAbortedException {
-			this.index = 0;
-		}
-
-		@Override
-		public TupleDesc getTupleDesc() {
-			Type[] types;
-			if (StringAggregator.this.gbfield == Aggregator.NO_GROUPING) {
-				types = new Type[]{Type.INT_TYPE};
-			} else {
-				types = new Type[]{StringAggregator.this.gbfieldtype,Type.INT_TYPE};
-			}
-			return new TupleDesc(types);
-		}
-
-		@Override
-		public void close() {
-			this.open = false;
-		}
+    	return new TupleIterator(desc, results);
     }
 }

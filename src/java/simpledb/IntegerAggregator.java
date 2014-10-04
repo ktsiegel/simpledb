@@ -14,6 +14,7 @@ public class IntegerAggregator implements Aggregator {
     private HashMap<Object,Integer> aggregate;
     private HashMap<Object,Integer> counts;
     private int count;
+    private boolean hasGField;
 
     /**
      * Aggregate constructor
@@ -37,6 +38,7 @@ public class IntegerAggregator implements Aggregator {
     	this.aop = what;
     	this.aggregate = new HashMap<Object,Integer>();
     	this.counts = new HashMap<Object,Integer>();
+    	this.hasGField = (this.gbfield != Aggregator.NO_GROUPING);
     }
 
     /**
@@ -107,77 +109,27 @@ public class IntegerAggregator implements Aggregator {
      *         aggregateVal is determined by the type of aggregate specified in
      *         the constructor.
      */
-    public DbIterator iterator() {
-        return new IntegerAggregatorIterator();
-    }
-    
-    public class IntegerAggregatorIterator implements DbIterator {
-    	
-    	private static final long serialVersionUID = 1L;
-		private boolean open;
-    	private ArrayList<Object> keys;
-    	int index = 0;
-    	
-    	public IntegerAggregatorIterator() {
-    		this.open = false;
-    		this.keys = new ArrayList<Object>();
-    		this.keys.addAll(IntegerAggregator.this.aggregate.keySet());
+    public DbIterator iterator() {   
+    	Type[] types = this.hasGField ? new Type[]{this.gbfieldtype,Type.INT_TYPE} : new Type[]{Type.INT_TYPE};
+    	TupleDesc desc = new TupleDesc(types);
+    	ArrayList<Tuple> results = new ArrayList<Tuple>();
+    	for (Object key: this.aggregate.keySet()) {
+    		int value = this.aggregate.get(key);
+    		Tuple ntup = new Tuple(desc);
+    		Field groupBy = this.hasGField ? (Field)key : new IntField(0);
+    		if (this.aop == Aggregator.Op.AVG) {
+    			value = value / this.counts.get(key);
+    		}
+    		Field aggregate = new IntField(value);
+    		if (this.hasGField) {
+    			ntup.setField(0, groupBy);
+    			ntup.setField(1, aggregate);
+    		} else {
+    			ntup.setField(0, aggregate);
+    		}
+    		results.add(ntup);
     	}
-
-		@Override
-		public void open() throws DbException, TransactionAbortedException {
-			this.open = true;
-			this.index = 0;
-		}
-
-		@Override
-		public boolean hasNext() throws DbException,
-				TransactionAbortedException {
-			if (!this.open || this.index >= keys.size()) return false;
-			return true;
-		}
-
-		@Override
-		public Tuple next() throws DbException, TransactionAbortedException,
-				NoSuchElementException {
-			if (this.hasNext()) {
-				Object field = this.keys.get(this.index);
-				Tuple ntuple = new Tuple(this.getTupleDesc());
-				Integer val = (Integer)IntegerAggregator.this.aggregate.get(field);
-				if (IntegerAggregator.this.aop == Op.AVG) {
-					val /= IntegerAggregator.this.counts.get(field);
-				}
-				if (field instanceof Field) {
-					ntuple.setField(0,(Field)field);
-					ntuple.setField(1, new IntField(val));
-				} else {
-					ntuple.setField(0, new IntField(val));
-				}
-				this.index++;
-				return ntuple;
-			}
-			return null;
-		}
-
-		@Override
-		public void rewind() throws DbException, TransactionAbortedException {
-			this.index = 0;
-		}
-
-		@Override
-		public TupleDesc getTupleDesc() {
-			Type[] types;
-			if (IntegerAggregator.this.gbfield == Aggregator.NO_GROUPING) {
-				types = new Type[]{Type.INT_TYPE};
-			} else {
-				types = new Type[]{IntegerAggregator.this.gbfieldtype,Type.INT_TYPE};
-			}
-			return new TupleDesc(types);
-		}
-
-		@Override
-		public void close() {
-			this.open = false;
-		}
+    	return new TupleIterator(desc, results);
+    	
     }
 }
