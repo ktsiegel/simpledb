@@ -128,7 +128,10 @@ public class Aggregate extends Operator {
      * aggregate. Should return null if there are no more tuples.
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-    	return this.aggrIt.next();
+    	if (this.aggrIt.hasNext()) {
+    		return this.aggrIt.next();
+    	}
+    	return null;
     }
 
     public void rewind() throws DbException, TransactionAbortedException {
