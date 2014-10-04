@@ -58,22 +58,22 @@ public class Delete extends Operator {
      * @see BufferPool#deleteTuple
      */
     protected Tuple fetchNext() throws TransactionAbortedException, DbException {
-        if (this.called) { return null; }
-        int count = 0;
-        Tuple result = null;
-        while (this.child.hasNext()) {
-        	Tuple next = this.child.next();
-        	try {
-				Database.getBufferPool().deleteTuple(this.transId, next);
+        if (this.called) return null;
+    	int count = 0;
+		while (child.hasNext()) {
+			Tuple next = child.next();
+			count++;
+			try {
+				Database.getBufferPool().deleteTuple(transId, next);
 			} catch (IOException e) {
-				throw new DbException("Error deleting tuple.");
+				throw new DbException("An error occured");
 			}
-        	result = new Tuple(this.resultTupleDesc);
-        	result.setField(0, new IntField(count));
-        	count++;
-        }
+		}
+    	Tuple output = new Tuple(this.resultTupleDesc);
+    	IntField intField = new IntField(count);
+    	output.setField(0, intField);
         this.called = true;
-        return result;
+        return output;
     }
 
     @Override
