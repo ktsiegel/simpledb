@@ -105,7 +105,6 @@ public class HeapFile implements DbFile {
     public void writePage(Page page) throws IOException {
         this.rfile.seek(BufferPool.PAGE_SIZE * page.getId().pageNumber());
         this.rfile.write(page.getPageData());
-        this.rfile.close();
     }
 
     /**
