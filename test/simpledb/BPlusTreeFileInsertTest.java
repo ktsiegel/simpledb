@@ -34,6 +34,7 @@ public class BPlusTreeFileInsertTest extends SimpleDbTestBase {
 		
 		// set the page size back to the default
 		BufferPool.setPageSize(BufferPool.PAGE_SIZE);
+		Database.reset();
 	}
 
 	/**
@@ -227,7 +228,6 @@ public class BPlusTreeFileInsertTest extends SimpleDbTestBase {
 	public void testSplitInternalPage() throws Exception {
 		// For this test we will decrease the size of the Buffer Pool pages
     	BufferPool.setPageSize(1024);
-	Database.reset();
 		
 		// This should create a B+ tree with a packed second tier of internal pages
 		// and packed third tier of leaf pages
