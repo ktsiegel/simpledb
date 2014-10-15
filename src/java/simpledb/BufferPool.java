@@ -188,8 +188,8 @@ public class BufferPool {
         cache.
     */
     public synchronized void discardPage(PageId pid) {
-        // some code goes here
-        // only necessary for lab5
+    	orderedPages.remove(pid);
+    	pages.remove(pid);
     }
 
     /**
@@ -208,8 +208,12 @@ public class BufferPool {
     /** Write all pages of the specified transaction to disk.
      */
     public synchronized  void flushPages(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+        for (int i=0; i<this.orderedPages.size(); i++) {
+        	PageId pid = this.orderedPages.get(i);
+        	if (this.pages.get(pid).isDirty().equals(tid)) {
+        		this.flushPage(pid);
+        	}
+        }
     }
 
     /**

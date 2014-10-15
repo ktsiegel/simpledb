@@ -193,9 +193,36 @@ public class BPlusTreeFile implements DbFile {
 	 */
 	BPlusTreeLeafPage findLeafPage(TransactionId tid, Field f, BPlusTreePageId pid,
 			Permissions perm) 
-					throws DbException, TransactionAbortedException {
-		// some code goes here
-        return null;
+					throws DbException, TransactionAbortedException { 
+		if (pid.pgcateg() == BPlusTreePageId.LEAF) {
+			// if we have reached a leaf, then return that leaf
+        	return (BPlusTreeLeafPage)Database.getBufferPool().getPage(tid, pid, perm);
+        } else {
+        	BPlusTreeInternalPage page = (BPlusTreeInternalPage)Database.getBufferPool().getPage(tid, pid, Permissions.READ_ONLY);
+        	Iterator<BPlusTreeEntry> it = page.iterator();
+        	BPlusTreeEntry entry = null;
+        	// iterate through all entries in the b plus tree internal page
+        	while (it.hasNext()) {
+        		entry = it.next();
+        		Field key = entry.getKey();
+        		if (f == null || f.compare(Op.LESS_THAN, key)) { 
+        			// if the provided field is null, then default to leftmost child.
+        			return this.findLeafPage(tid, f, entry.getLeftChild(), perm);
+        		} else if (key.compare(Op.EQUALS, f)) {
+        			// either child may have the page, so check both
+        			BPlusTreeLeafPage leafPageLeft = this.findLeafPage(tid, f, entry.getLeftChild(), perm);
+        			BPlusTreeLeafPage leafPageRight = this.findLeafPage(tid, f, entry.getRightChild(), perm);
+        			if (leafPageLeft == null) {
+        				return leafPageRight;
+        			}
+        			return leafPageLeft;
+        		}
+        	}
+        	if (entry != null) {
+        		return this.findLeafPage(tid, f, entry.getRightChild(), perm);
+        	}
+        }
+		return null;
 	}
 
 	/**
@@ -214,10 +241,103 @@ public class BPlusTreeFile implements DbFile {
 	 */
 	private BPlusTreeLeafPage splitLeafPage(BPlusTreeLeafPage page, TransactionId tid, HashSet<Page> dirtypages, Field field) 
 			throws DbException, IOException, TransactionAbortedException {
+		System.out.println("Splitting leaf page");
+		System.out.println("Current number of pages before leaf split: " + this.numPages());
+		// create new page
 		BPlusTreePageId parentId = page.getParentId();
-		// some code goes here
-        return null;
+		BPlusTreePageId nPageId = new BPlusTreePageId(this.tableid, this.getEmptyPage(tid, dirtypages), BPlusTreePageId.LEAF);
+		this.writePage(new BPlusTreeLeafPage(nPageId, BPlusTreeLeafPage.createEmptyPageData(), this.keyField));
+		Database.getBufferPool().discardPage(nPageId);
+		BPlusTreeLeafPage nPage = (BPlusTreeLeafPage)Database.getBufferPool().getPage(tid, nPageId, Permissions.READ_WRITE);
+		dirtypages.add(nPage);
+		dirtypages.add(page);
 		
+		// find the parent page
+		BPlusTreeInternalPage parentPage;
+		Page pPage = Database.getBufferPool().getPage(tid, parentId, Permissions.READ_WRITE);
+		if (pPage instanceof BPlusTreeRootPtrPage) {
+			System.out.println("This is a root page");
+			System.out.println("Current number of pages before: " + this.numPages());
+			// all of the leaves are in the root
+			BPlusTreeRootPtrPage rootParentPage = (BPlusTreeRootPtrPage)pPage;
+			System.out.println("Creating new internal page");
+			parentId = new BPlusTreePageId(this.tableid, this.getEmptyPage(tid, dirtypages), BPlusTreePageId.INTERNAL);
+			
+			writePage(new BPlusTreeInternalPage(parentId, BPlusTreeLeafPage.createEmptyPageData(), this.keyField));
+			Database.getBufferPool().discardPage(parentId);
+			parentPage = (BPlusTreeInternalPage)Database.getBufferPool().getPage(tid, parentId, Permissions.READ_WRITE);
+			rootParentPage.setRootId(parentId);
+			page.setParentId(parentPage.getId());
+			System.out.println("Current number of pages after internal page created: " + this.numPages());
+		} else {
+			System.out.println("This is not a root page");
+			parentPage = (BPlusTreeInternalPage)pPage;
+		}
+		dirtypages.add(parentPage);
+		
+		// instantiate variables for iteration
+		int numTuples = page.getNumTuples();
+		int index = 0;
+		BPlusTreeLeafPage resultPage = null;
+		Iterator<Tuple> it = page.iterator();
+		
+		// iterate past tuples that should stay in the original page
+		while (index < numTuples/2 && it.hasNext()) {
+			it.next();
+			index++;
+		}
+		
+		// find the midpoint tuple of the original page
+		Tuple midpoint = it.next();
+		page.deleteTuple(midpoint);
+		nPage.insertTuple(midpoint);
+		Tuple nTup = new Tuple(this.td);
+		nTup.setField(this.keyField, field);
+		
+		// determines which page the new tuple should be inserted into
+		if (midpoint.getField(this.keyField).compare(Op.GREATER_THAN, field)) {
+			page.insertTuple(nTup);
+			resultPage = page;
+		} else {
+			nPage.insertTuple(nTup);
+			resultPage = nPage;
+		}
+		
+		// fill the new page with the remaining tuples
+		while(it.hasNext()) {
+			Tuple next = it.next();
+			page.deleteTuple(next);
+			nPage.insertTuple(next);
+		}
+		
+		// update parent
+		BPlusTreeEntry parentEntry = new BPlusTreeEntry(midpoint.getField(this.keyField), page.pid, nPage.pid);
+		if (parentPage.getNumEmptySlots() > 0) {
+			System.out.println("Inserting new entry into parent");
+			parentPage.insertEntry(parentEntry);
+			System.out.println("Current number of pages after split: " + this.numPages());
+		} else {
+			// otherwise, split the internal pages to make room for the new parent pointer
+			System.out.println("Splitting parent page");
+			BPlusTreeInternalPage nParentPage = this.splitInternalPage(parentPage, tid, dirtypages, field);
+			nParentPage.insertEntry(parentEntry);
+			System.out.println("Current number of pages after split: " + this.numPages());
+			dirtypages.add(nParentPage);
+		}
+		
+		// update page pointers
+		BPlusTreePageId rightPageId = page.getRightSiblingId();
+		if (rightPageId != null) {
+			BPlusTreeLeafPage rightPage = (BPlusTreeLeafPage)Database.getBufferPool().getPage(tid, rightPageId, Permissions.READ_ONLY);
+			rightPage.setLeftSiblingId(nPage.pid);
+			dirtypages.add(rightPage);
+		}
+		page.setRightSiblingId(nPage.pid);
+		nPage.setLeftSiblingId(page.pid);
+		nPage.setRightSiblingId(rightPageId);
+		this.updateParentPointers(tid, parentPage, dirtypages);
+		
+		return resultPage;
 	}
 
 	/**
@@ -237,8 +357,83 @@ public class BPlusTreeFile implements DbFile {
 	private BPlusTreeInternalPage splitInternalPage(BPlusTreeInternalPage page, TransactionId tid, 
 			HashSet<Page> dirtypages, Field field) 
 					throws DbException, IOException, TransactionAbortedException {
-		// some code goes here
-        return null;
+		System.out.println("Splitting internal page");
+		System.out.println("Number of pages before internal page split: " + this.numPages());
+		// create new page
+		BPlusTreePageId parentId = page.getParentId();
+		BPlusTreePageId nPageId = new BPlusTreePageId(this.tableid, this.getEmptyPage(tid, dirtypages), BPlusTreePageId.INTERNAL);
+		this.writePage(new BPlusTreeInternalPage(nPageId, BPlusTreeInternalPage.createEmptyPageData(), this.keyField));
+		Database.getBufferPool().discardPage(nPageId);
+		BPlusTreeInternalPage nPage = (BPlusTreeInternalPage)Database.getBufferPool().getPage(tid, nPageId, Permissions.READ_WRITE);		
+		System.out.println("Number of pages after internal page split: " + this.numPages());
+		dirtypages.add(nPage);
+		dirtypages.add(page);
+		
+		// find the parent page 
+		BPlusTreeInternalPage parentPage;
+		Page pPage = Database.getBufferPool().getPage(tid, parentId, Permissions.READ_WRITE);
+		if (pPage instanceof BPlusTreeRootPtrPage) {
+			// the parent is the root pointer
+			System.out.println("This is a root pointer, so create a new page");
+			BPlusTreeRootPtrPage rootParentPage = (BPlusTreeRootPtrPage)pPage;
+			parentId = new BPlusTreePageId(this.tableid, this.getEmptyPage(tid, dirtypages), BPlusTreePageId.INTERNAL);
+			this.writePage(new BPlusTreeInternalPage(parentId, BPlusTreeLeafPage.createEmptyPageData(), this.keyField));
+			Database.getBufferPool().discardPage(parentId);
+			parentPage = (BPlusTreeInternalPage)Database.getBufferPool().getPage(tid, parentId, Permissions.READ_WRITE);
+			System.out.println("Number of pages after page creation: " + this.numPages());
+			rootParentPage.setRootId(parentId);
+			page.setParentId(parentPage.getId());	
+		} else {
+			parentPage = (BPlusTreeInternalPage)pPage;
+		}
+		dirtypages.add(parentPage);
+
+		// determines which page the new entry should be inserted into
+		BPlusTreeInternalPage resultPage;
+		int numEntries = page.getNumEntries();
+		int index = 0;
+		Iterator<BPlusTreeEntry> it = page.iterator();
+
+		// iterate past tuples that should stay in the original page
+		while (index < numEntries/2 && it.hasNext()) {
+			index++;
+		}
+
+		// find the midpoint entry of the original page
+		BPlusTreeEntry midpoint = it.next();
+		page.deleteEntry(midpoint);
+
+		if (midpoint.getKey().compare(Op.GREATER_THAN, field)) {
+			resultPage = page;
+		} else {
+			resultPage = nPage;
+		}
+
+		// fill the new page with the remaining entries
+		while(it.hasNext()) {
+			BPlusTreeEntry next = it.next();
+			page.deleteEntry(next);
+			nPage.insertEntry(next);
+		}
+		
+		// add parent entry
+		nPage.setParentId(parentPage.pid);
+		midpoint.setLeftChild(page.pid);
+		midpoint.setRightChild(nPage.pid);
+		this.updateParentPointers(tid, nPage, dirtypages);
+		this.updateParentPointers(tid, page, dirtypages);
+		this.updateParentPointers(tid, parentPage, dirtypages);
+
+		// see if the new tuple parent pointer fits
+		if (parentPage.getNumEmptySlots() > 0) {
+			parentPage.insertEntry(midpoint);
+			System.out.println("Number of pages after entry insert: " + this.numPages());
+		} else {
+			// otherwise, split the internal pages to make room for the new parent pointer
+			this.splitInternalPage(parentPage, tid, dirtypages, field);
+			System.out.println("Number of pages after recursive insert: " + this.numPages());
+		}
+		return resultPage;
 	}
 
 	/**
@@ -326,6 +521,7 @@ public class BPlusTreeFile implements DbFile {
 		// and split the leaf page if there are no more slots available
 		BPlusTreeLeafPage leafPage = findLeafPage(tid, t.getField(keyField), rootId, Permissions.READ_WRITE);
 		if(leafPage.getNumEmptySlots() == 0) {
+			System.out.println("Splitting leaf because of tuple entry");
 			leafPage = splitLeafPage(leafPage, tid, dirtypages, t.getField(keyField));	
 		}
 
