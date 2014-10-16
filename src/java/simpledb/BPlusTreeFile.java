@@ -441,7 +441,7 @@ public class BPlusTreeFile implements DbFile {
 				dirtypages.add(p);
 			}
 		}
-		else { // child.pgcateg() == BPlusTreePageId.INTERNAL
+		else { 
 			BPlusTreeInternalPage p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
 			if(!p.getParentId().equals(pid)) {
 				p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_WRITE);
@@ -711,18 +711,8 @@ public class BPlusTreeFile implements DbFile {
 				BPlusTreeEntry firstRightEntry = rightIt.next();
 				BPlusTreePageId formerParentRightChild = firstRightEntry.getLeftChild();
 				
-				// find and delete former parent entry
-				BPlusTreeEntry parentEntry = null;
-				Iterator<BPlusTreeEntry> parentIt = parent.iterator();
-				while(parentIt.hasNext()){
-					BPlusTreeEntry entry = parentIt.next();
-					if(parentEntry != null && entry.getKey().compare(Op.GREATER_THAN, firstRightEntry.getKey())){
-						break;
-					}
-					parentEntry = entry;
-				}
-				page.insertEntry(new BPlusTreeEntry(parentEntry.getKey(), formerParentLeftChild, formerParentRightChild));
-				parent.deleteEntry(parentEntry);
+				// find, delete, and re-insert former parent entry
+				findAndMoveParentEntry(parent, page, firstRightEntry, formerParentLeftChild, formerParentRightChild);
 				
 				// only move the last (first in stack) section of tuples from left sibling
 				while ((leftSibling.getNumEmptySlots() + 2) < page.getNumEmptySlots()) {
@@ -775,18 +765,8 @@ public class BPlusTreeFile implements DbFile {
 				BPlusTreeEntry firstRightEntry = rightSiblingEntries.get(0);
 				BPlusTreePageId formerParentRightChild = firstRightEntry.getLeftChild();
 				
-				// find and delete former parent entry
-				BPlusTreeEntry parentEntry = null;
-				Iterator<BPlusTreeEntry> parentIt = parent.iterator();
-				while(parentIt.hasNext()){
-					BPlusTreeEntry entry = parentIt.next();
-					if(parentEntry != null && entry.getKey().compare(Op.GREATER_THAN, firstRightEntry.getKey())){
-						break;
-					}
-					parentEntry = entry;
-				}
-				page.insertEntry(new BPlusTreeEntry(parentEntry.getKey(), formerParentLeftChild, formerParentRightChild));
-				parent.deleteEntry(parentEntry);
+				// find, delete, and re-insert parent entry
+				findAndMoveParentEntry(parent, page, firstRightEntry, formerParentLeftChild, formerParentRightChild);
 				
 				// only move the last (first in stack) section of tuples from left sibling
 				int index = 0;
@@ -810,6 +790,34 @@ public class BPlusTreeFile implements DbFile {
 			dirtypages.add(parent);
 		}
 		dirtypages.add(page);
+	}
+	
+	/**
+	 * Find the parent entry of a provided page in the parent page. Delete this parent entry
+	 * from the parent page and insert in the child page.
+	 * 
+	 * @param parent - the parent page that holds the parent entries
+	 * @param page - the page that is the child of some entry in the parent page
+	 * @param firstRightEntry - the first right entry after the parent
+	 * @param formerParentLeftChild - the new left child of the former parent entry after it is inserted into the child page
+	 * @param formerParentRightChild - the new right child of the former parent entry after it is inserted into the child page
+	 * @throws DbException 
+	 */
+	private static void findAndMoveParentEntry(BPlusTreeInternalPage parent, BPlusTreeInternalPage page, BPlusTreeEntry firstRightEntry,
+			BPlusTreePageId formerParentLeftChild, BPlusTreePageId formerParentRightChild) throws DbException {
+		BPlusTreeEntry parentEntry = null;
+		Iterator<BPlusTreeEntry> parentIt = parent.iterator();
+		
+		// iterate through parent page until the next element is greater than the first right entry
+		while(parentIt.hasNext()){
+			BPlusTreeEntry entry = parentIt.next();
+			if(parentEntry != null && entry.getKey().compare(Op.GREATER_THAN, firstRightEntry.getKey())){
+				break;
+			}
+			parentEntry = entry;
+		}
+		page.insertEntry(new BPlusTreeEntry(parentEntry.getKey(), formerParentLeftChild, formerParentRightChild));
+		parent.deleteEntry(parentEntry);
 	}
 
 	/**
