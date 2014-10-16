@@ -185,7 +185,6 @@ public class BufferPool {
     		}
     		this.pages.get(pId).markDirty(true, tid);
     	}
-    	System.out.println(dirtypages.size() + " dirty pages when deleting tuple.");
     }
 
     /**

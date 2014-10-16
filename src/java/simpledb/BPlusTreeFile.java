@@ -568,11 +568,35 @@ public class BPlusTreeFile implements DbFile {
 				mergeLeafPages(tid, leftSibling, page, parent, leftEntry, dirtypages);
 			}
 			else {
-				// some code goes here
-		        // YOUR CODE HERE:
-		        // Move some of the tuples from the left sibling to the page so
+				// Move some of the tuples from the left sibling to the page so
 				// that the tuples are evenly distributed. Be sure to update
 				// the corresponding parent entry.
+				int numSiblingTuples = leftSibling.getNumTuples() - leftSibling.getNumEmptySlots();
+				int numPageTuples = page.getNumTuples() - page.getNumEmptySlots();
+				// each sibling should end up with the number of tuples equal 
+				// to their average number of tuples before the shift
+				int average = (numPageTuples + numSiblingTuples)/2;
+				int numTuplesToMove = numSiblingTuples - average;
+				assert (numTuplesToMove > 0); // cannot move over a negative number of tuples
+				Iterator<Tuple> leftSiblingIt = leftSibling.iterator();
+				
+				// iterate through the first entries of the left sibling that we are not moving
+				int index = 0;
+				while (index < average) {
+					leftSiblingIt.next();
+					index++;
+				}
+				// only move the last section of tuples from left sibling
+				index = 0;
+				while (index < numTuplesToMove) {
+					assert (leftSiblingIt.hasNext()); // if there are no more tuples, something went wrong
+					Tuple t = leftSiblingIt.next();
+					// move tuple to the page with too few pages
+					leftSibling.deleteTuple(t);
+					page.insertTuple(t);
+					index++;
+				}
+				this.updateParentPointers(tid, parent, dirtypages);
 			}
 			dirtypages.add(leftSibling);
 			dirtypages.add(parent);
@@ -586,15 +610,32 @@ public class BPlusTreeFile implements DbFile {
 				mergeLeafPages(tid, page, rightSibling, parent, rightEntry, dirtypages);
 			}
 			else {
-				// some code goes here
-		        // YOUR CODE HERE:
 		        // Move some of the tuples from the right sibling to the page so
 				// that the tuples are evenly distributed. Be sure to update
 				// the corresponding parent entry.
+				int numSiblingTuples = rightSibling.getNumTuples() - rightSibling.getNumEmptySlots();
+				int numPageTuples = page.getNumTuples() - page.getNumEmptySlots();
+				// each sibling should end up with the number of tuples equal 
+				// to their average number of tuples before the shift
+				int average = (numPageTuples + numSiblingTuples)/2;
+				int numTuplesToMove = numSiblingTuples - average;
+				assert (numTuplesToMove > 0); // cannot move over a negative number of tuples
+				Iterator<Tuple> rightSiblingIt = rightSibling.iterator();
+				int index = 0;
+				while (index < numTuplesToMove) {
+					assert (rightSiblingIt.hasNext()); // if there are no more tuples, something went wrong
+					Tuple t = rightSiblingIt.next();
+					// move tuple to the page with too few pages
+					rightSibling.deleteTuple(t);
+					page.insertTuple(t);
+					index++;
+				}
+				this.updateParentPointers(tid, parent, dirtypages);
 			}
 			dirtypages.add(rightSibling);
 			dirtypages.add(parent);
 		}
+		dirtypages.add(page); //TODO this might not be right
 	}
 
 	/**
@@ -650,12 +691,36 @@ public class BPlusTreeFile implements DbFile {
 				mergeInternalPages(tid, leftSibling, page, parent, leftEntry, dirtypages);
 			}
 			else {
-				// some code goes here
-		        // YOUR CODE HERE:
-		        // Move some of the entries from the left sibling to the page so
+				// Move some of the entries from the left sibling to the page so
 				// that the entries are evenly distributed. Be sure to update
 				// the corresponding parent entry. Be sure to update the parent
 				// pointers of all children in the entries that were moved.
+				int numSiblingEntries = leftSibling.getNumEntries() - leftSibling.getNumEmptySlots();
+				int numPageEntries = page.getNumEntries() - page.getNumEmptySlots();
+				// each sibling should end up with the number of entries equal 
+				// to their average number of entries before the shift
+				int average = (numPageEntries + numSiblingEntries)/2;
+				int numEntriesToMove = numSiblingEntries - average;
+				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
+				Iterator<BPlusTreeEntry> leftSiblingIt = leftSibling.iterator();
+				
+				// iterate through the first entries of the left sibling that we are not moving
+				int index = 0;
+				while (index < average) {
+					leftSiblingIt.next();
+					index++;
+				}
+				// only move the last section of tuples from left sibling
+				index = 0;
+				while (index < numEntriesToMove) {
+					assert (leftSiblingIt.hasNext()); // if there are no more tuples, something went wrong
+					BPlusTreeEntry entry = leftSiblingIt.next();
+					// move tuple to the page with too few pages
+					leftSibling.deleteEntry(entry);
+					page.insertEntry(entry);
+					index++;
+				}
+				this.updateParentPointers(tid, parent, dirtypages);
 			}
 			dirtypages.add(leftSibling);
 			dirtypages.add(parent);
@@ -669,16 +734,34 @@ public class BPlusTreeFile implements DbFile {
 				mergeInternalPages(tid, page, rightSibling, parent, rightEntry, dirtypages);
 			}
 			else {
-				// some code goes here
-		        // YOUR CODE HERE:
-		        // Move some of the entries from the right sibling to the page so
+				// Move some of the entries from the right sibling to the page so
 				// that the entries are evenly distributed. Be sure to update
 				// the corresponding parent entry. Be sure to update the parent
 				// pointers of all children in the entries that were moved.
+				int numSiblingEntries = rightSibling.getNumEntries() - rightSibling.getNumEmptySlots();
+				int numPageEntries = page.getNumEntries() - page.getNumEmptySlots();
+				// each sibling should end up with the number of entries equal 
+				// to their average number of entries before the shift
+				int average = (numPageEntries + numSiblingEntries)/2;
+				int numEntriesToMove = numSiblingEntries - average;
+				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
+				Iterator<BPlusTreeEntry> rightSiblingIt = rightSibling.iterator();
+				// move tuples from the right sibling
+				int index = 0;
+				while (index < numEntriesToMove) {
+					assert (rightSiblingIt.hasNext()); // if there are no more tuples, something went wrong
+					BPlusTreeEntry entry = rightSiblingIt.next();
+					// move tuple to the page with too few pages
+					rightSibling.deleteEntry(entry);
+					page.insertEntry(entry);
+					index++;
+				}
+				this.updateParentPointers(tid, parent, dirtypages);
 			}
 			dirtypages.add(rightSibling);
 			dirtypages.add(parent);
 		}
+		dirtypages.add(page);
 	}
 
 	/**
@@ -724,10 +807,33 @@ public class BPlusTreeFile implements DbFile {
 			handleMinOccupancyInternalPage(tid, parent, dirtypages);
 		}
 
-		// some code goes here
-        // YOUR CODE HERE: 
 		// Move all the tuples from the right page to the left page, update
 		// the sibling pointers, and make the right page available for reuse
+		Iterator<Tuple> rightPageIt = rightPage.iterator();
+		while(rightPageIt.hasNext()) {
+			Tuple t = rightPageIt.next();
+			rightPage.deleteTuple(t);
+			leftPage.insertTuple(t);
+		}
+		
+		// update pointers
+		BPlusTreePageId rightPageRightSiblingId = rightPage.getRightSiblingId();
+		if (rightPageRightSiblingId != null) {
+			leftPage.setRightSiblingId(rightPageRightSiblingId);
+			BPlusTreeLeafPage rightRightSibling = (BPlusTreeLeafPage)Database.getBufferPool().getPage(tid, rightPageRightSiblingId, Permissions.READ_WRITE);
+			rightRightSibling.setLeftSiblingId(leftPage.getId());
+		} else {
+			leftPage.setRightSiblingId(null);
+		}
+		this.updateParentPointers(tid, parent, dirtypages);
+		
+		// make right page available for reuse
+		this.setEmptyPage(tid, dirtypages, rightPage.pid.pageNumber());
+		Database.getBufferPool().discardPage(rightPage.pid);
+
+		// label pages as dirty
+		dirtypages.add(leftPage);
+		dirtypages.add(parent);
 	}
 
 	/**
@@ -773,11 +879,30 @@ public class BPlusTreeFile implements DbFile {
 			handleMinOccupancyInternalPage(tid, parent, dirtypages);
 		}
 
-		// some code goes here
-        // YOUR CODE HERE:
-        // Move all the entries from the right page to the left page, update
+		// Move all the entries from the right page to the left page, update
 		// the parent pointers of the children in the entries that were moved, 
 		// and make the right page available for reuse
+		
+		// Move all the entries from the right page to the left page
+		Iterator<BPlusTreeEntry> rightPageIt = rightPage.iterator();
+		while(rightPageIt.hasNext()) {
+			BPlusTreeEntry entry = rightPageIt.next();
+			rightPage.deleteEntry(entry, false);
+			leftPage.insertEntry(entry);
+		}
+		
+		// update pointers
+		this.updateParentPointers(tid, parent, dirtypages);
+		this.updateParentPointers(tid, rightPage, dirtypages);
+		this.updateParentPointers(tid, leftPage, dirtypages);
+		
+		// make right page available for reuse
+		this.setEmptyPage(tid, dirtypages, rightPage.pid.pageNumber());
+		Database.getBufferPool().discardPage(rightPage.pid);
+
+		// label pages as dirty
+		dirtypages.add(leftPage);
+		dirtypages.add(parent);
 	}
 
 	/**
