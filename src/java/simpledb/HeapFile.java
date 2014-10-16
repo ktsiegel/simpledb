@@ -81,12 +81,12 @@ public class HeapFile implements DbFile {
     		throw new IllegalArgumentException();
     	}
     	// Read in enough bytes to fill the page with data
-    	byte[] pageBytes = new byte[BufferPool.PAGE_SIZE];
+    	byte[] pageBytes = new byte[BufferPool.getPageSize()];
     	Page nPage;
     	try {
         // Read in the bytes at the correct offset to fill the byte array
-    		file.seek(BufferPool.PAGE_SIZE*pid.pageNumber());
-    		file.read(pageBytes, 0, BufferPool.PAGE_SIZE);
+    		file.seek(BufferPool.getPageSize()*pid.pageNumber());
+    		file.read(pageBytes, 0, BufferPool.getPageSize());
     		file.close();
     		nPage = new HeapPage((HeapPageId)pid, pageBytes);
     	} catch (IOException e) {
@@ -103,7 +103,7 @@ public class HeapFile implements DbFile {
      *
      */
     public void writePage(Page page) throws IOException {
-        this.rfile.seek(BufferPool.PAGE_SIZE * page.getId().pageNumber());
+        this.rfile.seek(BufferPool.getPageSize() * page.getId().pageNumber());
         this.rfile.write(page.getPageData());
     }
 
@@ -111,7 +111,7 @@ public class HeapFile implements DbFile {
      * Returns the number of pages in this HeapFile.
      */
     public int numPages() {
-        return (int)(this.hFile.length()/BufferPool.PAGE_SIZE);
+        return (int)(this.hFile.length()/BufferPool.getPageSize());
     }
 
     /**

@@ -149,7 +149,17 @@ public class BufferPool {
      */
     public void insertTuple(TransactionId tid, int tableId, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-    	Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
+    	ArrayList<Page> dirtypages = Database.getCatalog().getDatabaseFile(tableId).insertTuple(tid, t);
+    	for (int i=0; i<dirtypages.size(); i++) {
+    		Page p = dirtypages.get(i);
+    		PageId pId = p.getId();
+    		if (!this.pages.containsKey(pId)) {
+    			this.pages.put(p.getId(), p);
+        		this.orderedPages.add(p.getId());
+    		}
+    		this.pages.get(pId).markDirty(true, tid);
+    	}
+    	System.out.println(dirtypages.size() + " dirty pages when inserting tuple.");
     }
 
     /**
@@ -166,7 +176,17 @@ public class BufferPool {
      */
     public  void deleteTuple(TransactionId tid, Tuple t)
         throws DbException, IOException, TransactionAbortedException {
-    	Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
+    	ArrayList<Page> dirtypages = Database.getCatalog().getDatabaseFile(t.getRecordId().getPageId().getTableId()).deleteTuple(tid, t);
+    	for (int i=0; i<dirtypages.size(); i++) {
+    		Page p = dirtypages.get(i);
+    		PageId pId = p.getId();
+    		if (!this.pages.containsKey(pId)) {
+    			this.pages.put(p.getId(), p);
+        		this.orderedPages.add(p.getId());
+    		}
+    		this.pages.get(pId).markDirty(true, tid);
+    	}
+    	System.out.println(dirtypages.size() + " dirty pages when deleting tuple.");
     }
 
     /**
@@ -220,15 +240,14 @@ public class BufferPool {
      * Discards a page from the buffer pool.
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
-    private synchronized  void evictPage() throws DbException {
-    	if (this.orderedPages.size() > 0) {
-    		PageId oldest = this.orderedPages.remove(0);
-    		try {
-				flushPage(oldest);
-				this.pages.remove(oldest);
-			} catch (IOException e) {
-				throw new DbException("Error flushing page");
-			}
+    private synchronized void evictPage() throws DbException {
+    	PageId pId = this.orderedPages.get(0);
+    	try {
+    		this.flushPage(pId);
+    	} catch (IOException e) {
+    		e.printStackTrace();
     	}
+    	pages.remove(pId);
+    	orderedPages.remove(pId);
     }
 }
