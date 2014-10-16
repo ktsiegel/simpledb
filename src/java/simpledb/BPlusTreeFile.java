@@ -702,17 +702,21 @@ public class BPlusTreeFile implements DbFile {
 				int average = (numPageEntries + numSiblingEntries)/2;
 				int numEntriesToMove = numSiblingEntries - average;
 				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
+				
+				// iterate through the entries of the left sibling and store in list
 				Iterator<BPlusTreeEntry> leftSiblingIt = leftSibling.iterator();
-				// iterate through the first entries of the left sibling that we are not moving
-				int index = 0;
-				while (index < average) {
-					leftSiblingIt.next();
-					index++;
+				Stack<BPlusTreeEntry> leftSiblingEntries = new Stack<BPlusTreeEntry>();
+				while (leftSiblingIt.hasNext()) {
+					leftSiblingEntries.push(leftSiblingIt.next());
 				}
 				
-				// find and delete former parent entry
+				// find left and right children of former parent entry
+				BPlusTreePageId formerParentLeftChild = leftSiblingEntries.peek().getRightChild();
 				Iterator<BPlusTreeEntry> rightIt = page.iterator();
 				BPlusTreeEntry firstRightEntry = rightIt.next();
+				BPlusTreePageId formerParentRightChild = firstRightEntry.getLeftChild();
+				
+				// find and delete former parent entry
 				BPlusTreeEntry parentEntry = null;
 				Iterator<BPlusTreeEntry> parentIt = parent.iterator();
 				while(parentIt.hasNext()){
@@ -722,41 +726,22 @@ public class BPlusTreeFile implements DbFile {
 					}
 					parentEntry = entry;
 				}
+				page.insertEntry(new BPlusTreeEntry(parentEntry.getKey(), formerParentLeftChild, formerParentRightChild));
 				parent.deleteEntry(parentEntry);
 				
-				// only move the last section of tuples from left sibling
-				index = 0;
-				BPlusTreeEntry leftSiblingEntry = null;
-				Stack<BPlusTreeEntry> entryStack = new Stack<BPlusTreeEntry>();
+				// only move the last (first in stack) section of tuples from left sibling
+				int index = 0;
 				while (index < numEntriesToMove) {
-					assert (leftSiblingIt.hasNext()); // if there are no more tuples, something went wrong
-					leftSiblingEntry = leftSiblingIt.next();
-					// move tuple to the page with too few pages
-					entryStack.push(leftSiblingEntry);
+					BPlusTreeEntry entry = leftSiblingEntries.pop();
+					leftSibling.deleteEntry(entry, true);
+					page.insertEntry(entry);
 					index++;
 				}
 				
-				// insert former parent
-				if (leftSiblingEntry != null) {
-					parentEntry.setLeftChild(leftSiblingEntry.getRightChild());
-				}
-				parentEntry.setRightChild(firstRightEntry.getLeftChild());
-				page.insertEntry(parentEntry);
-				
-				// insert left sibling tuples
-				while (!entryStack.empty()) {
-					BPlusTreeEntry e = entryStack.pop();
-					leftSibling.deleteEntry(e, true);;
-					page.insertEntry(e);
-				}
-				
 				// find new parent entry and insert into parent page
-				Iterator<BPlusTreeEntry> it = page.iterator();
-				BPlusTreeEntry nParent = it.next();
-				page.deleteEntry(nParent, false);
-				nParent.setLeftChild(leftSibling.getId());
-				nParent.setRightChild(page.getId());
-				parent.insertEntry(nParent);
+				BPlusTreeEntry nParent = leftSiblingEntries.pop();
+				leftSibling.deleteEntry(nParent, true);
+				parent.insertEntry(new BPlusTreeEntry(nParent.getKey(), leftSibling.getId(), page.getId()));
 				
 				this.updateParentPointers(tid, parent, dirtypages);
 				this.updateParentPointers(tid, page, dirtypages);
@@ -786,9 +771,23 @@ public class BPlusTreeFile implements DbFile {
 				int numEntriesToMove = numSiblingEntries - average;
 				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
 				
+				// iterate through the entries of the left sibling and store in list
+				Iterator<BPlusTreeEntry> rightSiblingIt = rightSibling.iterator();
+				ArrayList<BPlusTreeEntry> rightSiblingEntries = new ArrayList<BPlusTreeEntry>();
+				while (rightSiblingIt.hasNext()) {
+					rightSiblingEntries.add(rightSiblingIt.next());
+				}
+				
+				// find left and right children of former parent entry
+				Iterator<BPlusTreeEntry> leftIt = page.iterator();
+				BPlusTreePageId formerParentLeftChild = leftIt.next().getRightChild();
+				while (leftIt.hasNext()) {
+					formerParentLeftChild = leftIt.next().getRightChild();
+				}
+				BPlusTreeEntry firstRightEntry = rightSiblingEntries.get(0);
+				BPlusTreePageId formerParentRightChild = firstRightEntry.getLeftChild();
+				
 				// find and delete former parent entry
-				Iterator<BPlusTreeEntry> rightIt = page.iterator();
-				BPlusTreeEntry firstRightEntry = rightIt.next();
 				BPlusTreeEntry parentEntry = null;
 				Iterator<BPlusTreeEntry> parentIt = parent.iterator();
 				while(parentIt.hasNext()){
@@ -798,42 +797,22 @@ public class BPlusTreeFile implements DbFile {
 					}
 					parentEntry = entry;
 				}
+				page.insertEntry(new BPlusTreeEntry(parentEntry.getKey(), formerParentLeftChild, formerParentRightChild));
 				parent.deleteEntry(parentEntry);
 				
-				// find highest tuple in left page
-				Iterator<BPlusTreeEntry> it = page.iterator();
-				BPlusTreeEntry lastLeftChild = null;
-				while (it.hasNext()) {
-					lastLeftChild = it.next();
-				}
-				
-				// insert former parent
-				if (lastLeftChild != null) {
-					parentEntry.setLeftChild(lastLeftChild.getRightChild());
-				}
-				parentEntry.setRightChild(firstRightEntry.getLeftChild());
-				page.insertEntry(parentEntry);
-				
-				// only move the first section of tuples from right sibling
+				// only move the last (first in stack) section of tuples from left sibling
 				int index = 0;
-				Iterator<BPlusTreeEntry> rightSiblingIt = rightSibling.iterator();
-				BPlusTreeEntry rightSiblingEntry = null;
 				while (index < numEntriesToMove) {
-					assert (rightSiblingIt.hasNext()); // if there are no more tuples, something went wrong
-					rightSiblingEntry = rightSiblingIt.next();
-					// move tuple to the page with too few pages
-					rightSibling.deleteEntry(rightSiblingEntry, false);;
-					page.insertEntry(rightSiblingEntry);
+					BPlusTreeEntry entry = rightSiblingEntries.get(index);
+					rightSibling.deleteEntry(entry, false);
+					page.insertEntry(entry);
 					index++;
 				}
 				
 				// find new parent entry and insert into parent page
-				Iterator<BPlusTreeEntry> itr = page.iterator();
-				BPlusTreeEntry nParent = itr.next();
-				page.deleteEntry(nParent, false);
-				nParent.setLeftChild(page.getId());
-				nParent.setRightChild(rightSibling.getId());
-				parent.insertEntry(nParent);
+				BPlusTreeEntry nParent = rightSiblingEntries.get(index);
+				rightSibling.deleteEntry(nParent, false);
+				parent.insertEntry(new BPlusTreeEntry(nParent.getKey(), page.getId(), rightSibling.getId()));
 				
 				this.updateParentPointers(tid, parent, dirtypages);
 				this.updateParentPointers(tid, page, dirtypages);
