@@ -695,13 +695,8 @@ public class BPlusTreeFile implements DbFile {
 				// that the entries are evenly distributed. Be sure to update
 				// the corresponding parent entry. Be sure to update the parent
 				// pointers of all children in the entries that were moved.
-				int numSiblingEntries = leftSibling.getNumEntries() - leftSibling.getNumEmptySlots();
-				int numPageEntries = page.getNumEntries() - page.getNumEmptySlots();
 				// each sibling should end up with the number of entries equal 
 				// to their average number of entries before the shift
-				int average = (numPageEntries + numSiblingEntries)/2;
-				int numEntriesToMove = numSiblingEntries - average;
-				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
 				
 				// iterate through the entries of the left sibling and store in list
 				Iterator<BPlusTreeEntry> leftSiblingIt = leftSibling.iterator();
@@ -730,12 +725,10 @@ public class BPlusTreeFile implements DbFile {
 				parent.deleteEntry(parentEntry);
 				
 				// only move the last (first in stack) section of tuples from left sibling
-				int index = 0;
-				while (index < numEntriesToMove) {
+				while ((leftSibling.getNumEmptySlots() + 2) < page.getNumEmptySlots()) {
 					BPlusTreeEntry entry = leftSiblingEntries.pop();
 					leftSibling.deleteEntry(entry, true);
 					page.insertEntry(entry);
-					index++;
 				}
 				
 				// find new parent entry and insert into parent page
@@ -763,13 +756,8 @@ public class BPlusTreeFile implements DbFile {
 				// that the entries are evenly distributed. Be sure to update
 				// the corresponding parent entry. Be sure to update the parent
 				// pointers of all children in the entries that were moved.
-				int numSiblingEntries = rightSibling.getNumEntries() - rightSibling.getNumEmptySlots();
-				int numPageEntries = page.getNumEntries() - page.getNumEmptySlots();
 				// each sibling should end up with the number of entries equal 
 				// to their average number of entries before the shift
-				int average = (numPageEntries + numSiblingEntries)/2;
-				int numEntriesToMove = numSiblingEntries - average;
-				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
 				
 				// iterate through the entries of the left sibling and store in list
 				Iterator<BPlusTreeEntry> rightSiblingIt = rightSibling.iterator();
@@ -802,7 +790,7 @@ public class BPlusTreeFile implements DbFile {
 				
 				// only move the last (first in stack) section of tuples from left sibling
 				int index = 0;
-				while (index < numEntriesToMove) {
+				while ((rightSibling.getNumEmptySlots() + 2) < page.getNumEmptySlots()) {
 					BPlusTreeEntry entry = rightSiblingEntries.get(index);
 					rightSibling.deleteEntry(entry, false);
 					page.insertEntry(entry);
