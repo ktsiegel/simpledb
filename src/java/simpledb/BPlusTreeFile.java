@@ -703,24 +703,64 @@ public class BPlusTreeFile implements DbFile {
 				int numEntriesToMove = numSiblingEntries - average;
 				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
 				Iterator<BPlusTreeEntry> leftSiblingIt = leftSibling.iterator();
-				
 				// iterate through the first entries of the left sibling that we are not moving
 				int index = 0;
 				while (index < average) {
 					leftSiblingIt.next();
 					index++;
 				}
+				
+				// find and delete former parent entry
+				Iterator<BPlusTreeEntry> rightIt = page.iterator();
+				BPlusTreeEntry firstRightEntry = rightIt.next();
+				BPlusTreeEntry parentEntry = null;
+				Iterator<BPlusTreeEntry> parentIt = parent.iterator();
+				while(parentIt.hasNext()){
+					BPlusTreeEntry entry = parentIt.next();
+					if(parentEntry != null && entry.getKey().compare(Op.GREATER_THAN, firstRightEntry.getKey())){
+						break;
+					}
+					parentEntry = entry;
+				}
+				parent.deleteEntry(parentEntry);
+				
 				// only move the last section of tuples from left sibling
 				index = 0;
+				BPlusTreeEntry leftSiblingEntry = null;
+				Stack<BPlusTreeEntry> entryStack = new Stack<BPlusTreeEntry>();
 				while (index < numEntriesToMove) {
 					assert (leftSiblingIt.hasNext()); // if there are no more tuples, something went wrong
-					BPlusTreeEntry entry = leftSiblingIt.next();
+					leftSiblingEntry = leftSiblingIt.next();
 					// move tuple to the page with too few pages
-					leftSibling.deleteEntry(entry);
-					page.insertEntry(entry);
+					entryStack.push(leftSiblingEntry);
 					index++;
 				}
+				
+				// insert former parent
+				if (leftSiblingEntry != null) {
+					parentEntry.setLeftChild(leftSiblingEntry.getRightChild());
+				}
+				parentEntry.setRightChild(firstRightEntry.getLeftChild());
+				page.insertEntry(parentEntry);
+				
+				// insert left sibling tuples
+				while (!entryStack.empty()) {
+					BPlusTreeEntry e = entryStack.pop();
+					leftSibling.deleteEntry(e, true);;
+					page.insertEntry(e);
+				}
+				
+				// find new parent entry and insert into parent page
+				Iterator<BPlusTreeEntry> it = page.iterator();
+				BPlusTreeEntry nParent = it.next();
+				page.deleteEntry(nParent, false);
+				nParent.setLeftChild(leftSibling.getId());
+				nParent.setRightChild(page.getId());
+				parent.insertEntry(nParent);
+				
 				this.updateParentPointers(tid, parent, dirtypages);
+				this.updateParentPointers(tid, page, dirtypages);
+				this.updateParentPointers(tid, leftSibling, dirtypages);
 			}
 			dirtypages.add(leftSibling);
 			dirtypages.add(parent);
@@ -745,18 +785,59 @@ public class BPlusTreeFile implements DbFile {
 				int average = (numPageEntries + numSiblingEntries)/2;
 				int numEntriesToMove = numSiblingEntries - average;
 				assert (numEntriesToMove > 0); // cannot move over a negative number of tuples
-				Iterator<BPlusTreeEntry> rightSiblingIt = rightSibling.iterator();
-				// move tuples from the right sibling
+				
+				// find and delete former parent entry
+				Iterator<BPlusTreeEntry> rightIt = page.iterator();
+				BPlusTreeEntry firstRightEntry = rightIt.next();
+				BPlusTreeEntry parentEntry = null;
+				Iterator<BPlusTreeEntry> parentIt = parent.iterator();
+				while(parentIt.hasNext()){
+					BPlusTreeEntry entry = parentIt.next();
+					if(parentEntry != null && entry.getKey().compare(Op.GREATER_THAN, firstRightEntry.getKey())){
+						break;
+					}
+					parentEntry = entry;
+				}
+				parent.deleteEntry(parentEntry);
+				
+				// find highest tuple in left page
+				Iterator<BPlusTreeEntry> it = page.iterator();
+				BPlusTreeEntry lastLeftChild = null;
+				while (it.hasNext()) {
+					lastLeftChild = it.next();
+				}
+				
+				// insert former parent
+				if (lastLeftChild != null) {
+					parentEntry.setLeftChild(lastLeftChild.getRightChild());
+				}
+				parentEntry.setRightChild(firstRightEntry.getLeftChild());
+				page.insertEntry(parentEntry);
+				
+				// only move the first section of tuples from right sibling
 				int index = 0;
+				Iterator<BPlusTreeEntry> rightSiblingIt = rightSibling.iterator();
+				BPlusTreeEntry rightSiblingEntry = null;
 				while (index < numEntriesToMove) {
 					assert (rightSiblingIt.hasNext()); // if there are no more tuples, something went wrong
-					BPlusTreeEntry entry = rightSiblingIt.next();
+					rightSiblingEntry = rightSiblingIt.next();
 					// move tuple to the page with too few pages
-					rightSibling.deleteEntry(entry);
-					page.insertEntry(entry);
+					rightSibling.deleteEntry(rightSiblingEntry, false);;
+					page.insertEntry(rightSiblingEntry);
 					index++;
 				}
+				
+				// find new parent entry and insert into parent page
+				Iterator<BPlusTreeEntry> itr = page.iterator();
+				BPlusTreeEntry nParent = itr.next();
+				page.deleteEntry(nParent, false);
+				nParent.setLeftChild(page.getId());
+				nParent.setRightChild(rightSibling.getId());
+				parent.insertEntry(nParent);
+				
 				this.updateParentPointers(tid, parent, dirtypages);
+				this.updateParentPointers(tid, page, dirtypages);
+				this.updateParentPointers(tid, rightSibling, dirtypages);
 			}
 			dirtypages.add(rightSibling);
 			dirtypages.add(parent);
@@ -882,6 +963,17 @@ public class BPlusTreeFile implements DbFile {
 		// Move all the entries from the right page to the left page, update
 		// the parent pointers of the children in the entries that were moved, 
 		// and make the right page available for reuse
+		
+		Iterator<BPlusTreeEntry>lPageIt = leftPage.iterator();
+		BPlusTreeEntry lastLeftEntry = null;
+		while (lPageIt.hasNext()) {
+			lastLeftEntry = lPageIt.next();
+		}
+		Iterator<BPlusTreeEntry>rPageIt = rightPage.iterator();
+		BPlusTreeEntry firstRightEntry = rPageIt.next();
+		parentEntry.setLeftChild(lastLeftEntry.getRightChild());
+		parentEntry.setRightChild(firstRightEntry.getLeftChild());
+		leftPage.insertEntry(parentEntry);
 		
 		// Move all the entries from the right page to the left page
 		Iterator<BPlusTreeEntry> rightPageIt = rightPage.iterator();
