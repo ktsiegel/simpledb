@@ -421,6 +421,7 @@ public class BPlusTreeInternalPage implements Page {
 			keys[1] = e.getKey();
 			markSlotUsed(0, true);
 			markSlotUsed(1, true);
+			e.setRecordId(new RecordId(pid, 1));
 			return;
 		}
 
