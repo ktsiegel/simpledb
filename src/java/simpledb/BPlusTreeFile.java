@@ -256,7 +256,17 @@ public class BPlusTreeFile implements DbFile {
 			throws DbException, IOException, TransactionAbortedException {
 
 		if(child.pgcateg() == BPlusTreePageId.LEAF) {
-			BPlusTreeLeafPage p = (BPlusTreeLeafPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			BPlusTreeLeafPage p = null;
+			for (Page page : dirtypages) {
+				if (child.equals(page.getId())) {
+					p = (BPlusTreeLeafPage) page;
+					break;
+				}
+			}
+			if (p == null) {
+				p = (BPlusTreeLeafPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			}
+
 			if(!p.getParentId().equals(pid)) {
 				p = (BPlusTreeLeafPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_WRITE);
 				p.setParentId(pid);
@@ -264,7 +274,17 @@ public class BPlusTreeFile implements DbFile {
 			}
 		}
 		else { // child.pgcateg() == BPlusTreePageId.INTERNAL
-			BPlusTreeInternalPage p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			BPlusTreeInternalPage p = null;
+			for (Page page : dirtypages) {
+				if (child.equals(page.getId())) {
+					p = (BPlusTreeInternalPage) page;
+					break;
+				}
+			}
+			if (p == null) {
+				p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			}
+
 			if(!p.getParentId().equals(pid)) {
 				p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_WRITE);
 				p.setParentId(pid);
