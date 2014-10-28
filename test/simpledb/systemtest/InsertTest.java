@@ -19,21 +19,15 @@ public class InsertTest extends SimpleDbTestBase {
         HeapFile destination = SystemTestUtil.createRandomHeapFile(
                 columns, destinationRows, null, destinationTuples);
         assert destinationTuples.size() == destinationRows;
-        
-        System.out.println("before: " + sourceTuples.toString() + " to " + destinationTuples.toString());
-        
         // Insert source into destination
         TransactionId tid = new TransactionId();
         SeqScan ss = new SeqScan(tid, source.getId(), "");
         Insert insOp = new Insert(tid, ss, destination.getId());
-        
-
 //        Query q = new Query(insOp, tid);
         insOp.open();
         boolean hasResult = false;
         while (insOp.hasNext()) {
             Tuple tup = insOp.next();
-            System.out.println("tup: " + tup);
             assertFalse(hasResult);
             hasResult = true;
             assertEquals(SystemTestUtil.SINGLE_INT_DESCRIPTOR, tup.getTupleDesc());
@@ -41,14 +35,11 @@ public class InsertTest extends SimpleDbTestBase {
         }
         assertTrue(hasResult);
         insOp.close();
-                
+
         // As part of the same transaction, scan the table
         sourceTuples.addAll(destinationTuples);
-        
-        System.out.println("after: " + sourceTuples.toString() + " to " + destinationTuples.toString());
-
         SystemTestUtil.matchTuples(destination, tid, sourceTuples);
-        
+
         // As part of a different transaction, scan the table
         Database.getBufferPool().transactionComplete(tid);
         Database.getBufferPool().flushAllPages();

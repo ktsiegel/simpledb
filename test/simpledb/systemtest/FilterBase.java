@@ -27,9 +27,7 @@ public abstract class FilterBase extends SimpleDbTestBase {
     private int runTransactionForPredicate(HeapFile table, Predicate predicate)
             throws IOException, DbException, TransactionAbortedException {
         TransactionId tid = new TransactionId();
-        System.out.println("table: " + table + " tid: " + tid + " predicate: " + predicate);
         int result = applyPredicate(table, tid, predicate);
-        System.out.println("result: " + result);
         Database.getBufferPool().transactionComplete(tid);
         return result;
     }
@@ -39,7 +37,6 @@ public abstract class FilterBase extends SimpleDbTestBase {
         // Test the true value
         HeapFile f = createTable(column, columnValue);
         Predicate predicate = new Predicate(column, operation, new IntField(trueValue));
-        System.out.println("rows: " + ROWS + " column: " + column + " operation: " + operation.toString() + " predicate: " + predicate);
         assertEquals(ROWS, runTransactionForPredicate(f, predicate));
         f = Utility.openHeapFile(COLUMNS, f.getFile());
         validateAfter(f);

@@ -241,7 +241,6 @@ public class BPlusTreeFile implements DbFile {
 	 */
 	private BPlusTreeLeafPage splitLeafPage(BPlusTreeLeafPage page, TransactionId tid, HashSet<Page> dirtypages, Field field) 
 			throws DbException, IOException, TransactionAbortedException {
-		// create new page
 		BPlusTreePageId parentId = page.getParentId();
 		BPlusTreePageId nPageId = new BPlusTreePageId(this.tableid, this.getEmptyPage(tid, dirtypages), BPlusTreePageId.LEAF);
 		this.writePage(new BPlusTreeLeafPage(nPageId, BPlusTreeLeafPage.createEmptyPageData(), this.keyField));
@@ -434,15 +433,35 @@ public class BPlusTreeFile implements DbFile {
 			throws DbException, IOException, TransactionAbortedException {
 
 		if(child.pgcateg() == BPlusTreePageId.LEAF) {
-			BPlusTreeLeafPage p = (BPlusTreeLeafPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			BPlusTreeLeafPage p = null;
+			for (Page page : dirtypages) {
+				if (child.equals(page.getId())) {
+					p = (BPlusTreeLeafPage) page;
+					break;
+				}
+			}
+			if (p == null) {
+				p = (BPlusTreeLeafPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			}
+
 			if(!p.getParentId().equals(pid)) {
 				p = (BPlusTreeLeafPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_WRITE);
 				p.setParentId(pid);
 				dirtypages.add(p);
 			}
 		}
-		else { 
-			BPlusTreeInternalPage p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+		else { // child.pgcateg() == BPlusTreePageId.INTERNAL
+			BPlusTreeInternalPage p = null;
+			for (Page page : dirtypages) {
+				if (child.equals(page.getId())) {
+					p = (BPlusTreeInternalPage) page;
+					break;
+				}
+			}
+			if (p == null) {
+				p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_ONLY);
+			}
+
 			if(!p.getParentId().equals(pid)) {
 				p = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, child, Permissions.READ_WRITE);
 				p.setParentId(pid);
@@ -635,7 +654,7 @@ public class BPlusTreeFile implements DbFile {
 			dirtypages.add(rightSibling);
 			dirtypages.add(parent);
 		}
-		dirtypages.add(page); //TODO this might not be right
+		dirtypages.add(page); 
 	}
 
 	/**

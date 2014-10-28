@@ -34,6 +34,7 @@ public class BPlusTreeFileInsertTest extends SimpleDbTestBase {
 		
 		// set the page size back to the default
 		BufferPool.setPageSize(BufferPool.PAGE_SIZE);
+		Database.reset();
 	}
 
 	/**

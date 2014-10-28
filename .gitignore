@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .project
 .classpath
 
@@ -23,6 +24,8 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+=======
+>>>>>>> 2d7242a66e5e2262e300d90abfa4ea9394906498
 *.class
 
 # Mobile Tools for Java (J2ME)
@@ -35,6 +38,7 @@ Temporary Items
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+<<<<<<< HEAD
 
 *.class
 
@@ -79,3 +83,5 @@ local.properties
 
 # TeXlipse plugin
 .texlipse
+=======
+>>>>>>> 2d7242a66e5e2262e300d90abfa4ea9394906498

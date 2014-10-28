@@ -166,7 +166,7 @@ public class BufferPool {
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        synchronized (sharedLocks) {
+       synchronized (sharedLocks) {
         	if (sharedLocks.contains(p) && sharedLocks.get(p).contains(tid)) {
         		return true;
         	}
