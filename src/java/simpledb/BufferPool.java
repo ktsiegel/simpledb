@@ -24,7 +24,7 @@ public class BufferPool {
     
     /** Maps page IDs to actual Pages; holds all pages currently in buffer pool. */
     private ConcurrentHashMap<PageId, Page> pages;
-    private ArrayList<PageId> orderedPages;
+    private ArrayList<PageId> lruCache;
     
     /** Default number of pages passed to the constructor. This is used by
     other classes. BufferPool should use the numPages argument to the
@@ -41,7 +41,7 @@ public class BufferPool {
     public BufferPool(int numPages) {
     	pageTotal = numPages;
     	pages = new ConcurrentHashMap<PageId, Page>();
-    	orderedPages = new ArrayList<PageId>();
+    	lruCache = new ArrayList<PageId>();
     }
     
     public static int getPageSize() {
@@ -68,19 +68,24 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-    	if (pages.containsKey(pid)) return pages.get(pid);
+    	if (pages.containsKey(pid)) {
+    		// place at end of lruCache array
+    		lruCache.remove(pid);
+    		lruCache.add(pid);
+    		return pages.get(pid);
+    	}
     	try {
     		// fetch the database file--throws NoSuchElementException if the file is not there
     		DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
     		// fetch the page from the database file--throws IllegalArgumentException if the pid does not exist.
     		Page page = file.readPage(pid);
-    		if (orderedPages.size() == pageTotal) {
+    		if (lruCache.size() == pageTotal) {
     			evictPage();
     		}
     		pages.put(pid, page);
-    		orderedPages.add(pid);
+    		lruCache.add(pid);
     		return page;
     	} catch (NoSuchElementException e) {
     		throw new DbException("No database file found.");
@@ -154,9 +159,11 @@ public class BufferPool {
     		Page p = dirtypages.get(i);
     		PageId pId = p.getId();
     		if (!this.pages.containsKey(pId)) {
-    			this.pages.put(p.getId(), p);
-        		this.orderedPages.add(p.getId());
+    			this.pages.put(p.getId(), p);	
+    		} else {
+    			this.lruCache.remove(p.getId());
     		}
+    		this.lruCache.add(p.getId());
     		this.pages.get(pId).markDirty(true, tid);
     	}
     }
@@ -181,8 +188,10 @@ public class BufferPool {
     		PageId pId = p.getId();
     		if (!this.pages.containsKey(pId)) {
     			this.pages.put(p.getId(), p);
-        		this.orderedPages.add(p.getId());
+    		} else {
+    			this.lruCache.remove(p.getId());
     		}
+    		this.lruCache.add(p.getId());
     		this.pages.get(pId).markDirty(true, tid);
     	}
     }
@@ -206,7 +215,7 @@ public class BufferPool {
         cache.
     */
     public synchronized void discardPage(PageId pid) {
-    	orderedPages.remove(pid);
+    	lruCache.remove(pid);
     	pages.remove(pid);
     }
 
@@ -226,8 +235,8 @@ public class BufferPool {
     /** Write all pages of the specified transaction to disk.
      */
     public synchronized  void flushPages(TransactionId tid) throws IOException {
-        for (int i=0; i<this.orderedPages.size(); i++) {
-        	PageId pid = this.orderedPages.get(i);
+        for (int i=0; i<this.lruCache.size(); i++) {
+        	PageId pid = this.lruCache.get(i);
         	if (this.pages.get(pid).isDirty().equals(tid)) {
         		this.flushPage(pid);
         	}
@@ -239,13 +248,13 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-    	PageId pId = this.orderedPages.get(0);
+    	PageId pId = this.lruCache.get(0);
     	try {
     		this.flushPage(pId);
     	} catch (IOException e) {
     		e.printStackTrace();
     	}
     	pages.remove(pId);
-    	orderedPages.remove(pId);
+    	lruCache.remove(pId);
     }
 }
