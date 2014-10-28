@@ -29,7 +29,7 @@ public class BufferPool {
     /** Maps page IDs to actual Pages; holds all pages currently in buffer pool. */
     private ConcurrentHashMap<PageId, Page> pages;
     private ArrayList<PageId> lruCache;
-    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> pageLockTransactions;
+    private ConcurrentHashMap<PageId, TransactionId> pageLockTransactions;
     private ConcurrentHashMap<PageId, Lock> sharedLocks;
     private ConcurrentHashMap<PageId, Lock> exclusiveLocks;
     
@@ -49,7 +49,7 @@ public class BufferPool {
     	pageTotal = numPages;
     	pages = new ConcurrentHashMap<PageId, Page>();
     	lruCache = new ArrayList<PageId>();
-    	pageLockTransactions = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
+    	pageLockTransactions = new ConcurrentHashMap<PageId, TransactionId>();
     	sharedLocks = new ConcurrentHashMap<PageId, Lock>();
     	exclusiveLocks = new ConcurrentHashMap<PageId, Lock>();
     }
@@ -80,59 +80,49 @@ public class BufferPool {
      */
     public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-    	System.out.println("pid: " + pid.toString());
     	synchronized (pageLockTransactions) {
     		if (perm == Permissions.READ_ONLY) {
-    			System.out.println("Read Only");
     			if (pageLockTransactions.containsKey(pid)) {
-    				System.out.println("Lock Exists");
     				if (exclusiveLocks.containsKey(pid)) {
-    					System.out.println("Exclusive lock exists");
-    					try {
-    						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
-    		            } catch (Exception e) {
-    		            	throw new TransactionAbortedException();
-    		            } finally {
-    		            	exclusiveLocks.get(pid).lock();
-    		            }
+    					if (tid.equals(pageLockTransactions.get(pid))) {
+    						exclusiveLocks.remove(pid);
+    						sharedLocks.put(pid, new ReentrantLock());
+    						sharedLocks.get(pid).lock();
+    					} else {
+    						try {
+        						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
+        		            } catch (Exception e) {
+        		            	throw new TransactionAbortedException();
+        		            } finally {
+        		            	exclusiveLocks.get(pid).lock();
+        		            }
+    					}
     				}
     			} else {
-    				System.out.println("Lock does not exist 1");
     				sharedLocks.put(pid, new ReentrantLock());
-    				if (!pageLockTransactions.containsKey(pid)) {
-    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-    				}
-    				pageLockTransactions.get(pid).add(tid);
+    				sharedLocks.get(pid).lock();
+    				pageLockTransactions.put(pid, tid);
     			}
     		} else if (perm == Permissions.READ_WRITE) {
-    			System.out.println("Read Write");
     			if (pageLockTransactions.containsKey(pid)) {
-    				System.out.println("Lock Exists");
     				if (!exclusiveLocks.containsKey(pid)) {
-    					System.out.println("Moving nonexclusive lock to exclusive lock");
-    					exclusiveLocks.put(pid, sharedLocks.remove(pid));
-    					Lock lock = exclusiveLocks.get(pid);
-    					lock.lock();
-    					System.out.println("locked " + lock.toString());
+    					Lock lock = sharedLocks.remove(pid);
+    					if (tid.equals(pageLockTransactions.get(pid))) {
+    						lock = new ReentrantLock();
+    					}
+    					exclusiveLocks.put(pid, lock);
     				}
-    				System.out.println("Trying exclusive lock: " + exclusiveLocks.get(pid).toString());
     				try {
 						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
 		            } catch (Exception e) {
 		            	throw new TransactionAbortedException();
 		            } finally {
-		            	System.out.println("locking existing lock");
 		            	exclusiveLocks.get(pid).lock();
 		            }
     			} else {
-    				System.out.println("Lock does not exist 2");
-    				Lock lock = new ReentrantLock();
-    				lock.lock();
-    				exclusiveLocks.put(pid, lock);
-    				if (!pageLockTransactions.containsKey(pid)) {
-    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-    				}
-    				pageLockTransactions.get(pid).add(tid);
+    				exclusiveLocks.put(pid, new ReentrantLock());
+    				exclusiveLocks.get(pid).lock();
+    				pageLockTransactions.put(pid,tid);
     			}
     		}
     	}
@@ -188,10 +178,7 @@ public class BufferPool {
         		} else if (sharedLocks.containsKey(pid)) {
         			sharedLocks.get(pid).unlock();
         		}
-        		pageLockTransactions.get(pid).remove(tid);
-        		if (pageLockTransactions.get(pid).size() == 0) {
-        			pageLockTransactions.remove(pid);
-        		}
+        		pageLockTransactions.remove(pid);
         	}
     	}
     }
@@ -208,7 +195,7 @@ public class BufferPool {
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-    	return pageLockTransactions.containsKey(p) && pageLockTransactions.get(p).contains(tid);
+    	return pageLockTransactions.containsKey(p);
     }
 
     /**
