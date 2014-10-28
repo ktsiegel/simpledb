@@ -29,7 +29,7 @@ public class BufferPool {
     /** Maps page IDs to actual Pages; holds all pages currently in buffer pool. */
     private ConcurrentHashMap<PageId, Page> pages;
     private ArrayList<PageId> lruCache;
-    private ConcurrentHashMap<PageId, TransactionId> pageLockTransactions;
+    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> pageLockTransactions;
     private ConcurrentHashMap<PageId, Lock> sharedLocks;
     private ConcurrentHashMap<PageId, Lock> exclusiveLocks;
     
@@ -49,7 +49,7 @@ public class BufferPool {
     	pageTotal = numPages;
     	pages = new ConcurrentHashMap<PageId, Page>();
     	lruCache = new ArrayList<PageId>();
-    	pageLockTransactions = new ConcurrentHashMap<PageId, TransactionId>();
+    	pageLockTransactions = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
     	sharedLocks = new ConcurrentHashMap<PageId, Lock>();
     	exclusiveLocks = new ConcurrentHashMap<PageId, Lock>();
     }
@@ -86,7 +86,7 @@ public class BufferPool {
     				// A lock currently exists on this page.
     				if (exclusiveLocks.containsKey(pid)) {
     					// If it's an exclusive lock, then check if it's within the same transaction.
-    					if (tid.equals(pageLockTransactions.get(pid))) {
+    					if (pageLockTransactions.get(pid).contains(tid) && pageLockTransactions.get(pid).size() == 1) {
     						// Update lock status
     						exclusiveLocks.remove(pid);
     						sharedLocks.put(pid, new ReentrantLock());
@@ -101,13 +101,18 @@ public class BufferPool {
         		            	exclusiveLocks.get(pid).lock();
         		            }
     					}
-    				} // It's ok if the lock is a shared lock
+    				} else { // It's ok if the lock is a shared lock
+    					pageLockTransactions.get(pid).add(tid);
+    				}
     			} else { 
     				// No lock on this page, so create a new lock and lock it.
     				sharedLocks.put(pid, new ReentrantLock());
     				sharedLocks.get(pid).lock();
     				// Update which transaction holds a lock on this page.
-    				pageLockTransactions.put(pid, tid);
+    				if (!pageLockTransactions.contains(pid)) {
+    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
+    				}
+    				pageLockTransactions.get(pid).add(tid);
     			}
     		} else if (perm == Permissions.READ_WRITE) {
     			if (pageLockTransactions.containsKey(pid)) {
@@ -116,7 +121,7 @@ public class BufferPool {
     					// If it is an exclusive lock, then check if it's the same transaction
     					// and update the lock accordingly.
     					Lock lock = sharedLocks.remove(pid);
-    					if (tid.equals(pageLockTransactions.get(pid))) {
+    					if (pageLockTransactions.get(pid).contains(tid) && pageLockTransactions.get(pid).size() == 1) {
     						lock = new ReentrantLock();
     					}
     					exclusiveLocks.put(pid, lock);
@@ -133,7 +138,10 @@ public class BufferPool {
     				// No lock exists on this page, so acquire one and lock.
     				exclusiveLocks.put(pid, new ReentrantLock());
     				exclusiveLocks.get(pid).lock();
-    				pageLockTransactions.put(pid,tid);
+    				if (!pageLockTransactions.contains(pid)) {
+    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
+    				}
+    				pageLockTransactions.get(pid).add(tid);
     			}
     		}
     	}
@@ -189,7 +197,10 @@ public class BufferPool {
         		} else if (sharedLocks.containsKey(pid)) {
         			sharedLocks.get(pid).unlock();
         		}
-        		pageLockTransactions.remove(pid);
+        		pageLockTransactions.get(pid).remove(tid);
+        		if (pageLockTransactions.get(pid).size() == 0) {
+        			pageLockTransactions.remove(pid);
+        		}
         	}
     	}
     }
@@ -200,13 +211,21 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+    	synchronized (pageLockTransactions) {
+    		for (PageId p : pageLockTransactions.keySet()) {
+            	if (pageLockTransactions.get(p).contains(tid)) {
+            		pageLockTransactions.get(p).remove(tid);
+            		if (pageLockTransactions.get(p).size() == 0) {
+            			pageLockTransactions.remove(p);
+            		}
+            	}
+            }
+    	}
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-    	return pageLockTransactions.containsKey(p);
+    	return pageLockTransactions.containsKey(p) && pageLockTransactions.get(p).contains(tid);
     }
 
     /**
