@@ -4,6 +4,9 @@ import java.io.*;
 import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 
 /**
  * BufferPool manages the reading and writing of pages into memory from
@@ -25,8 +28,9 @@ public class BufferPool {
     /** Maps page IDs to actual Pages; holds all pages currently in buffer pool. */
     private ConcurrentHashMap<PageId, Page> pages;
     private ArrayList<PageId> lruCache;
-    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> sharedLocks;
-    private ConcurrentHashMap<PageId, TransactionId> exclusiveLocks;
+    private ConcurrentHashMap<TransactionId, ArrayList<PageId>> pageLockTransactions;
+    private ConcurrentHashMap<PageId, Lock> sharedLocks;
+    private ConcurrentHashMap<PageId, Lock> exclusiveLocks;
     
     /** Default number of pages passed to the constructor. This is used by
     other classes. BufferPool should use the numPages argument to the
@@ -44,8 +48,9 @@ public class BufferPool {
     	pageTotal = numPages;
     	pages = new ConcurrentHashMap<PageId, Page>();
     	lruCache = new ArrayList<PageId>();
-    	sharedLocks = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
-    	exclusiveLocks = new ConcurrentHashMap<PageId, TransactionId>();
+    	pageLockTransactions = new ConcurrentHashMap<TransactionId, ArrayList<PageId>>();
+    	sharedLocks = new ConcurrentHashMap<PageId, Lock>();
+    	exclusiveLocks = new ConcurrentHashMap<PageId, Lock>();
     }
     
     public static int getPageSize() {
@@ -74,6 +79,50 @@ public class BufferPool {
      */
     public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
+    	synchronized (pageLockTransactions) {
+    		if (perm == Permissions.READ_ONLY) {
+    			if (pageLockTransactions.containsKey(tid) && pageLockTransactions.get(tid).contains(pid)) {
+    				if (exclusiveLocks.containsKey(pid)) {
+    					try {
+    						exclusiveLocks.get(pid).tryLock();
+    		            } finally {
+    		            	exclusiveLocks.get(pid).lock();
+    		            }
+    				}
+    				
+    			} else {
+    				sharedLocks.put(pid, new ReentrantLock());
+    				if (!pageLockTransactions.containsKey(tid)) {
+    					pageLockTransactions.put(tid, new ArrayList<PageId>());
+    				}
+    				pageLockTransactions.get(tid).add(pid);
+    			}
+    		} else if (perm == Permissions.READ_WRITE) {
+    			if (pageLockTransactions.containsKey(tid) && pageLockTransactions.get(tid).contains(pid)) {
+    				if (!exclusiveLocks.containsKey(pid)) {
+    					exclusiveLocks.put(pid, sharedLocks.remove(pid));
+    				}
+    				try {
+						exclusiveLocks.get(pid).tryLock();
+		            } finally {
+		            	exclusiveLocks.get(pid).lock();
+		            }
+    			} else {
+    				Lock lock = new ReentrantLock();
+    				lock.lock();
+    				exclusiveLocks.put(pid, lock);
+    				if (!pageLockTransactions.containsKey(tid)) {
+    					pageLockTransactions.put(tid, new ArrayList<PageId>());
+    				}
+    				pageLockTransactions.get(tid).add(pid);
+    			}
+    		}
+    	}
+    	return getPageSynchronized(tid, pid, perm);
+    }
+    
+    public Page getPageSynchronized(TransactionId tid, PageId pid, Permissions perm)
+            throws TransactionAbortedException, DbException {
     	Page p;
     	if (pages.containsKey(pid)) {
     		// place at end of lruCache array
@@ -101,27 +150,6 @@ public class BufferPool {
         		throw new TransactionAbortedException();
         	}
     	}
-    	if (perm == Permissions.READ_ONLY) {
-    		while (exclusiveLocks.contains(pid)) {
-    			
-    		}
-    		synchronized (sharedLocks) {
-    			if (!sharedLocks.contains(pid)) {
-    				ArrayList<TransactionId> tidList = new ArrayList<TransactionId>();
-    				tidList.add(tid);
-    				sharedLocks.put(pid, tidList);
-    			} else {
-    				sharedLocks.get(pid).add(tid);
-    			}
-    		}
-    	} else if (perm == Permissions.READ_WRITE) {
-    		while (exclusiveLocks.contains(pid) || sharedLocks.contains(pid)) {
-    			
-    		}
-    		synchronized (exclusiveLocks) {
-    			exclusiveLocks.put(pid, tid);
-    		}
-    	}
     	return p;
     }
 
@@ -135,23 +163,13 @@ public class BufferPool {
      * @param pid the ID of the page to unlock
      */
     public synchronized void releasePage(TransactionId tid, PageId pid) {
-    	synchronized (sharedLocks) {
-    		if (sharedLocks.contains(pid)) {
-    			ArrayList<TransactionId> tids = sharedLocks.get(pid);
-    			if (tids.contains(tid)) {
-    				if (tids.size() == 1) {
-        				sharedLocks.remove(pid);
-        			} else {
-        				tids.remove(tid);
-        			}
-    			}
+    	if (holdsLock(tid, pid)) {
+    		if (exclusiveLocks.containsKey(pid)) {
+    			exclusiveLocks.get(pid).unlock();
+    		} else if (sharedLocks.containsKey(pid)) {
+    			sharedLocks.get(pid).unlock();
     		}
     	}
-        synchronized (exclusiveLocks) {
-        	if (exclusiveLocks.get(pid) == tid) {
-        		exclusiveLocks.remove(pid);
-        	}
-        }
     }
 
     /**
@@ -166,17 +184,7 @@ public class BufferPool {
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-       synchronized (sharedLocks) {
-        	if (sharedLocks.contains(p) && sharedLocks.get(p).contains(tid)) {
-        		return true;
-        	}
-        }
-        synchronized (exclusiveLocks) {
-        	if (exclusiveLocks.get(p) == tid) {
-        		return true;
-        	}
-        }
-        return false;
+    	return pageLockTransactions.containsKey(tid) && pageLockTransactions.get(tid).contains(p);
     }
 
     /**
