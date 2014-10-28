@@ -83,12 +83,16 @@ public class BufferPool {
     	synchronized (pageLockTransactions) {
     		if (perm == Permissions.READ_ONLY) {
     			if (pageLockTransactions.containsKey(pid)) {
+    				// A lock currently exists on this page.
     				if (exclusiveLocks.containsKey(pid)) {
+    					// If it's an exclusive lock, then check if it's within the same transaction.
     					if (tid.equals(pageLockTransactions.get(pid))) {
+    						// Update lock status
     						exclusiveLocks.remove(pid);
     						sharedLocks.put(pid, new ReentrantLock());
     						sharedLocks.get(pid).lock();
     					} else {
+    						// If not part of the same transaction, then wait to acquire the lock.
     						try {
         						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
         		            } catch (Exception e) {
@@ -97,21 +101,27 @@ public class BufferPool {
         		            	exclusiveLocks.get(pid).lock();
         		            }
     					}
-    				}
-    			} else {
+    				} // It's ok if the lock is a shared lock
+    			} else { 
+    				// No lock on this page, so create a new lock and lock it.
     				sharedLocks.put(pid, new ReentrantLock());
     				sharedLocks.get(pid).lock();
+    				// Update which transaction holds a lock on this page.
     				pageLockTransactions.put(pid, tid);
     			}
     		} else if (perm == Permissions.READ_WRITE) {
     			if (pageLockTransactions.containsKey(pid)) {
+    				// A lock exists on this page.
     				if (!exclusiveLocks.containsKey(pid)) {
+    					// If it is an exclusive lock, then check if it's the same transaction
+    					// and update the lock accordingly.
     					Lock lock = sharedLocks.remove(pid);
     					if (tid.equals(pageLockTransactions.get(pid))) {
     						lock = new ReentrantLock();
     					}
     					exclusiveLocks.put(pid, lock);
     				}
+    				// Acquire the exclusive lock.
     				try {
 						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
 		            } catch (Exception e) {
@@ -120,6 +130,7 @@ public class BufferPool {
 		            	exclusiveLocks.get(pid).lock();
 		            }
     			} else {
+    				// No lock exists on this page, so acquire one and lock.
     				exclusiveLocks.put(pid, new ReentrantLock());
     				exclusiveLocks.get(pid).lock();
     				pageLockTransactions.put(pid,tid);
