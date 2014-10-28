@@ -25,6 +25,8 @@ public class BufferPool {
     /** Maps page IDs to actual Pages; holds all pages currently in buffer pool. */
     private ConcurrentHashMap<PageId, Page> pages;
     private ArrayList<PageId> lruCache;
+    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> sharedLocks;
+    private ConcurrentHashMap<PageId, TransactionId> exclusiveLocks;
     
     /** Default number of pages passed to the constructor. This is used by
     other classes. BufferPool should use the numPages argument to the
@@ -42,6 +44,8 @@ public class BufferPool {
     	pageTotal = numPages;
     	pages = new ConcurrentHashMap<PageId, Page>();
     	lruCache = new ArrayList<PageId>();
+    	sharedLocks = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
+    	exclusiveLocks = new ConcurrentHashMap<PageId, TransactionId>();
     }
     
     public static int getPageSize() {
@@ -70,28 +74,55 @@ public class BufferPool {
      */
     public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
+    	Page p;
     	if (pages.containsKey(pid)) {
     		// place at end of lruCache array
-    		lruCache.remove(pid);
-    		lruCache.add(pid);
-    		return pages.get(pid);
-    	}
-    	try {
-    		// fetch the database file--throws NoSuchElementException if the file is not there
-    		DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
-    		// fetch the page from the database file--throws IllegalArgumentException if the pid does not exist.
-    		Page page = file.readPage(pid);
-    		if (lruCache.size() == pageTotal) {
-    			evictPage();
+    		synchronized (lruCache) {
+    			lruCache.remove(pid);
+        		lruCache.add(pid);
+        		p = pages.get(pid);
     		}
-    		pages.put(pid, page);
-    		lruCache.add(pid);
-    		return page;
-    	} catch (NoSuchElementException e) {
-    		throw new DbException("No database file found.");
-    	} catch (IllegalArgumentException e) {
-    		throw new TransactionAbortedException();
+    	} else {
+    		try {
+        		// fetch the database file--throws NoSuchElementException if the file is not there
+        		DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+        		// fetch the page from the database file--throws IllegalArgumentException if the pid does not exist.
+        		p = file.readPage(pid);
+        		if (lruCache.size() == pageTotal) {
+        			evictPage();
+        		}
+        		synchronized (lruCache) {
+        			pages.put(pid, p);
+            		lruCache.add(pid);
+        		}
+        	} catch (NoSuchElementException e) {
+        		throw new DbException("No database file found.");
+        	} catch (IllegalArgumentException e) {
+        		throw new TransactionAbortedException();
+        	}
     	}
+    	if (perm == Permissions.READ_ONLY) {
+    		while (exclusiveLocks.contains(pid)) {
+    			
+    		}
+    		synchronized (sharedLocks) {
+    			if (!sharedLocks.contains(pid)) {
+    				ArrayList<TransactionId> tidList = new ArrayList<TransactionId>();
+    				tidList.add(tid);
+    				sharedLocks.put(pid, tidList);
+    			} else {
+    				sharedLocks.get(pid).add(tid);
+    			}
+    		}
+    	} else if (perm == Permissions.READ_WRITE) {
+    		while (exclusiveLocks.contains(pid) || sharedLocks.contains(pid)) {
+    			
+    		}
+    		synchronized (exclusiveLocks) {
+    			exclusiveLocks.put(pid, tid);
+    		}
+    	}
+    	return p;
     }
 
     /**
@@ -103,9 +134,24 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public  void releasePage(TransactionId tid, PageId pid) {
-        // some code goes here
-        // not necessary for lab1|lab2
+    public synchronized void releasePage(TransactionId tid, PageId pid) {
+    	synchronized (sharedLocks) {
+    		if (sharedLocks.contains(pid)) {
+    			ArrayList<TransactionId> tids = sharedLocks.get(pid);
+    			if (tids.contains(tid)) {
+    				if (tids.size() == 1) {
+        				sharedLocks.remove(pid);
+        			} else {
+        				tids.remove(tid);
+        			}
+    			}
+    		}
+    	}
+        synchronized (exclusiveLocks) {
+        	if (exclusiveLocks.get(pid) == tid) {
+        		exclusiveLocks.remove(pid);
+        	}
+        }
     }
 
     /**
@@ -120,8 +166,16 @@ public class BufferPool {
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-        // some code goes here
-        // not necessary for lab1|lab2
+        synchronized (sharedLocks) {
+        	if (sharedLocks.contains(p) && sharedLocks.get(p).contains(tid)) {
+        		return true;
+        	}
+        }
+        synchronized (exclusiveLocks) {
+        	if (exclusiveLocks.get(p) == tid) {
+        		return true;
+        	}
+        }
         return false;
     }
 

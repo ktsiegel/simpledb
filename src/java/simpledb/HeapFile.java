@@ -223,7 +223,7 @@ public class HeapFile implements DbFile {
         	while (!this.currPageIterator.hasNext() && this.currPageNum < this.totalPages-1) {
         		this.currPageNum++;
         		this.currPageIterator = ((HeapPage)Database.getBufferPool().getPage(tID, 
-        				new HeapPageId(HeapFile.this.getId(), this.currPageNum), Permissions.READ_WRITE)).iterator();
+        				new HeapPageId(HeapFile.this.getId(), this.currPageNum), Permissions.READ_ONLY)).iterator();
         	}
         	return result;
         }
@@ -235,7 +235,7 @@ public class HeapFile implements DbFile {
         public void rewind() throws DbException, TransactionAbortedException {
         	this.currPageNum = 0;
         	this.currPageIterator = ((HeapPage)Database.getBufferPool().getPage(tID, 
-        			new HeapPageId(HeapFile.this.getId(),this.currPageNum), Permissions.READ_WRITE)).iterator();
+        			new HeapPageId(HeapFile.this.getId(),this.currPageNum), Permissions.READ_ONLY)).iterator();
         }
 
         /**
