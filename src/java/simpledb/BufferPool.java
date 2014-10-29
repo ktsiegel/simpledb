@@ -93,13 +93,18 @@ public class BufferPool {
     						sharedLocks.get(pid).lock();
     					} else {
     						// If not part of the same transaction, then wait to acquire the lock.
+    						System.out.println("Trying to get read only lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
     						try {
         						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
         		            } catch (Exception e) {
         		            	throw new TransactionAbortedException();
         		            } finally {
+        		            	if (!exclusiveLocks.get(pid).tryLock()) {
+        		            		throw new TransactionAbortedException();
+        		            	}
         		            	exclusiveLocks.get(pid).lock();
         		            }
+    						System.out.println("Got read only lock");
     					}
     				} else { // It's ok if the lock is a shared lock
     					pageLockTransactions.get(pid).add(tid);
@@ -117,7 +122,7 @@ public class BufferPool {
     		} else if (perm == Permissions.READ_WRITE) {
     			if (pageLockTransactions.containsKey(pid)) {
     				// A lock exists on this page.
-    				if (!exclusiveLocks.containsKey(pid)) {
+    				if (!exclusiveLocks.containsKey(pid) && sharedLocks.containsKey(pid)) {
     					// If it is an exclusive lock, then check if it's the same transaction
     					// and update the lock accordingly.
     					Lock lock = sharedLocks.remove(pid);
@@ -127,13 +132,20 @@ public class BufferPool {
     					exclusiveLocks.put(pid, lock);
     				}
     				// Acquire the exclusive lock.
-    				try {
-						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
-		            } catch (Exception e) {
-		            	throw new TransactionAbortedException();
-		            } finally {
-		            	exclusiveLocks.get(pid).lock();
-		            }
+    				if (exclusiveLocks.get(pid) != null) {
+    					System.out.println("Trying to get read write lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
+        				try {
+    						exclusiveLocks.get(pid).tryLock(10, TimeUnit.MILLISECONDS);
+    		            } catch (Exception e) {
+    		            	throw new TransactionAbortedException();
+    		            } finally {
+    		            	if (!exclusiveLocks.get(pid).tryLock()) {
+    		            		throw new TransactionAbortedException();
+    		            	}
+    		            	exclusiveLocks.get(pid).lock();
+    		            }
+        				System.out.println("Acquired read write lock");
+    				}
     			} else {
     				// No lock exists on this page, so acquire one and lock.
     				exclusiveLocks.put(pid, new ReentrantLock());
@@ -193,9 +205,11 @@ public class BufferPool {
     	synchronized (pageLockTransactions) {
     		if (holdsLock(tid, pid)) {
         		if (exclusiveLocks.containsKey(pid)) {
-        			exclusiveLocks.get(pid).unlock();
+        			System.out.println(exclusiveLocks.get(pid).toString());
+        			exclusiveLocks.remove(pid).unlock();
         		} else if (sharedLocks.containsKey(pid)) {
-        			sharedLocks.get(pid).unlock();
+        			System.out.println(sharedLocks.get(pid).toString());
+        			sharedLocks.remove(pid).unlock();
         		}
         		pageLockTransactions.get(pid).remove(tid);
         		if (pageLockTransactions.get(pid).size() == 0) {
@@ -214,10 +228,7 @@ public class BufferPool {
     	synchronized (pageLockTransactions) {
     		for (PageId p : pageLockTransactions.keySet()) {
             	if (pageLockTransactions.get(p).contains(tid)) {
-            		pageLockTransactions.get(p).remove(tid);
-            		if (pageLockTransactions.get(p).size() == 0) {
-            			pageLockTransactions.remove(p);
-            		}
+            		this.releasePage(tid, p);
             	}
             }
     	}
@@ -237,8 +248,15 @@ public class BufferPool {
      */
     public void transactionComplete(TransactionId tid, boolean commit)
         throws IOException {
-        // some code goes here
-        // not necessary for lab1|lab2
+        if (commit) {
+        	this.flushPages(tid);
+        }
+        this.transactionComplete(tid);
+        for (PageId p : this.pages.keySet()) {
+        	if (this.pages.get(p).isDirty() == tid) {
+        		this.discardPage(p);
+        	}
+        }
     }
 
     /**
@@ -340,7 +358,8 @@ public class BufferPool {
     public synchronized  void flushPages(TransactionId tid) throws IOException {
         for (int i=0; i<this.lruCache.size(); i++) {
         	PageId pid = this.lruCache.get(i);
-        	if (this.pages.get(pid).isDirty().equals(tid)) {
+        	if (this.pages.containsKey(pid) && this.pages.get(pid).isDirty() != null
+        			&& tid.equals(this.pages.get(pid).isDirty())) {
         		this.flushPage(pid);
         	}
         }
@@ -352,12 +371,19 @@ public class BufferPool {
      */
     private synchronized void evictPage() throws DbException {
     	PageId pId = this.lruCache.get(0);
-    	try {
-    		this.flushPage(pId);
-    	} catch (IOException e) {
-    		e.printStackTrace();
+    	int index = 1;
+    	while (this.pages.get(pId).isDirty() != null && index < this.lruCache.size()) {
+    		pId = this.lruCache.get(index);
+    		index++;
     	}
-    	pages.remove(pId);
-    	lruCache.remove(pId);
+    	if (this.pages.get(pId).isDirty() == null) {
+    		try {
+        		this.flushPage(pId);
+        	} catch (IOException e) { 
+        		e.printStackTrace();
+        	}
+        	pages.remove(pId);
+        	lruCache.remove(pId);
+    	}
     }
 }

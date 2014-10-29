@@ -207,9 +207,11 @@ public class BPlusTreeFile implements DbFile {
         		Field key = entry.getKey();
         		if (f == null || f.compare(Op.LESS_THAN, key)) { 
         			// if the provided field is null, then default to leftmost child.
+        			Database.getBufferPool().releasePage(tid, page.getId());
         			return this.findLeafPage(tid, f, entry.getLeftChild(), perm);
         		} else if (key.compare(Op.EQUALS, f)) {
         			// either child may have the page, so check both
+        			Database.getBufferPool().releasePage(tid, page.getId());
         			BPlusTreeLeafPage leafPageLeft = this.findLeafPage(tid, f, entry.getLeftChild(), perm);
         			BPlusTreeLeafPage leafPageRight = this.findLeafPage(tid, f, entry.getRightChild(), perm);
         			if (leafPageLeft == null) {
@@ -219,6 +221,7 @@ public class BPlusTreeFile implements DbFile {
         		}
         	}
         	if (entry != null) {
+        		Database.getBufferPool().releasePage(tid, page.getId());
         		return this.findLeafPage(tid, f, entry.getRightChild(), perm);
         	}
         }
@@ -1359,6 +1362,7 @@ class BPlusTreeSearchIterator extends AbstractDbFileIterator {
 	 * for the given predicate operation
 	 */
 	public void open() throws DbException, TransactionAbortedException {
+		System.out.println("here");
 		BPlusTreeRootPtrPage rootPtr = (BPlusTreeRootPtrPage) Database.getBufferPool().getPage(
 				tid, BPlusTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
 		BPlusTreePageId root = rootPtr.getRootId();
