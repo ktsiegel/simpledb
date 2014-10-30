@@ -80,7 +80,7 @@ public class BufferPool {
      */
     public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-    	synchronized (pageLockTransactions) {
+//    	synchronized (pageLockTransactions) {
     		if (perm == Permissions.READ_ONLY) {
     			if (pageLockTransactions.containsKey(pid)) {
     				// A lock currently exists on this page.
@@ -95,7 +95,7 @@ public class BufferPool {
     						// If not part of the same transaction, then wait to acquire the lock.
     						System.out.println("Trying to get read only lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
     						try {
-        						exclusiveLocks.get(pid).tryLock(10, TimeUnit.SECONDS);
+        						exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
         		            } catch (Exception e) {
         		            	throw new TransactionAbortedException();
         		            } finally {
@@ -129,6 +129,16 @@ public class BufferPool {
     					if (pageLockTransactions.get(pid).contains(tid) && pageLockTransactions.get(pid).size() == 1) {
     						lock = new ReentrantLock();
     					}
+    					try {
+    						lock.tryLock(100, TimeUnit.MILLISECONDS);
+    		            } catch (Exception e) {
+    		            	throw new TransactionAbortedException();
+    		            } finally {
+    		            	if (!lock.tryLock()) {
+    		            		throw new TransactionAbortedException();
+    		            	}
+    		            	lock.lock();
+    		            }
     					exclusiveLocks.put(pid, lock);
     				}
     				// Acquire the exclusive lock.
@@ -156,7 +166,7 @@ public class BufferPool {
     				pageLockTransactions.get(pid).add(tid);
     			}
     		}
-    	}
+//    	}
     	return getPageSynchronized(tid, pid, perm);
     }
     
@@ -179,10 +189,8 @@ public class BufferPool {
         		if (lruCache.size() == pageTotal) {
         			evictPage();
         		}
-        		synchronized (lruCache) {
-        			pages.put(pid, p);
-            		lruCache.add(pid);
-        		}
+        		pages.put(pid, p);
+        		lruCache.add(pid);
         	} catch (NoSuchElementException e) {
         		throw new DbException("No database file found.");
         	} catch (IllegalArgumentException e) {

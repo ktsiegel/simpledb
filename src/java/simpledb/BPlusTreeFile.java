@@ -316,7 +316,7 @@ public class BPlusTreeFile implements DbFile {
 		// update page pointers
 		BPlusTreePageId rightPageId = page.getRightSiblingId();
 		if (rightPageId != null) {
-			BPlusTreeLeafPage rightPage = (BPlusTreeLeafPage)Database.getBufferPool().getPage(tid, rightPageId, Permissions.READ_ONLY);
+			BPlusTreeLeafPage rightPage = (BPlusTreeLeafPage)Database.getBufferPool().getPage(tid, rightPageId, Permissions.READ_WRITE);
 			rightPage.setLeftSiblingId(nPage.pid);
 			dirtypages.add(rightPage);
 		}

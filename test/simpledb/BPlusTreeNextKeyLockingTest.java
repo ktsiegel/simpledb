@@ -130,107 +130,107 @@ public class BPlusTreeNextKeyLockingTest extends SimpleDbTestBase {
 		bw1 = null;
 	}
 
-//	@Test
-//	public void nextKeyLockingTestGreaterThan() throws Exception {
-//		// This should create a B+ tree with 100 leaf pages
-//		BPlusTreeFile bigFile = BPlusTreeUtility.createRandomBPlusTreeFile(2, 50200,
-//				null, null, 0);
-//		System.out.println("asdf");
-//		// get a key from the middle of the root page
-//		BPlusTreePageId rootPtrPid = new BPlusTreePageId(bigFile.getId(), 0, BPlusTreePageId.ROOT_PTR);
-//		BPlusTreeRootPtrPage rootPtr = (BPlusTreeRootPtrPage) Database.getBufferPool().getPage(tid, rootPtrPid, Permissions.READ_ONLY);
-//		BPlusTreePageId rootId = rootPtr.getRootId();
-//		assertEquals(rootId.pgcateg(), BPlusTreePageId.INTERNAL);
-//		BPlusTreeInternalPage root = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, rootId, Permissions.READ_ONLY);
-//		int keyIndex = 50; // this should be right in the middle since there are 100 leaf pages
-//		Iterator<BPlusTreeEntry> it = root.iterator();
-//		Field key = null;
-//		int count = 0;
-//		while(it.hasNext()) {
-//			BPlusTreeEntry e = it.next();
-//			if(count == keyIndex) {
-//				key = e.getKey();
-//				break;
-//			}
-//			count++;
-//		}
-//		assertTrue(key != null);
-//
-//		// now find all tuples containing that key and delete them, as well as the previous key
-//		IndexPredicate ipred = new IndexPredicate(Op.EQUALS, key);
-//		DbFileIterator fit = bigFile.indexIterator(tid, ipred);
-//		fit.open();
-//		while(fit.hasNext()) {
-//			Database.getBufferPool().deleteTuple(tid, fit.next());
-//		}
-//		fit.close();
-//
-//		count = 0;
-//		while(count == 0) {
-//			key = new IntField(((IntField) key).getValue() - 1);
-//			ipred = new IndexPredicate(Op.EQUALS, key);
-//			fit = bigFile.indexIterator(tid, ipred);
-//			fit.open();
-//			while(fit.hasNext()) {
-//				Database.getBufferPool().deleteTuple(tid, fit.next());
-//				count++;
-//			}
-//			fit.close();
-//		}
-//		System.out.println("asdf");
-//		Database.getBufferPool().transactionComplete(tid);
-//		tid = new TransactionId();
-//
-//		// search for tuples greater than or equal to the key
-//		ipred = new IndexPredicate(Op.GREATER_THAN_OR_EQ, key);
-//		fit = bigFile.indexIterator(tid, ipred);
-//		fit.open();
-//		int keyCountBefore = 0;
-//		while(fit.hasNext()) {
-//			fit.next();
-//			keyCountBefore++;
-//		}
-//		fit.close();
-//		System.out.println("asdf");
-//		// In a different thread, try to insert tuples containing the key
-//		TransactionId tid1 = new TransactionId();
-//		BPlusTreeWriter bw1 = new BPlusTreeWriter(tid1, bigFile, ((IntField) key).getValue(), 1);
-//		bw1.start();
-//
-//		// allow thread to start
-//		Thread.sleep(POLL_INTERVAL);
-//		System.out.println("asdf");
-//		// search for tuples greater than or equal to the key
-//		ipred = new IndexPredicate(Op.GREATER_THAN_OR_EQ, key);
-//		fit = bigFile.indexIterator(tid, ipred);
-//		fit.open();
-//		int keyCountAfter = 0;
-//		while(fit.hasNext()) {
-//			fit.next();
-//			keyCountAfter++;
-//		}
-//		fit.close();
-//		System.out.println("asdf");
-//		// make sure our indexIterator() is working
-//		assertTrue(keyCountBefore > 0);
-//
-//		// check that we don't have any phantoms
-//		assertEquals(keyCountBefore, keyCountAfter);
-//		assertFalse(bw1.succeeded());
-//
-//		// now let the inserts happen
-//		Database.getBufferPool().transactionComplete(tid);
-//		System.out.println("asdf");
-//		while(!bw1.succeeded()) {
-//			Thread.sleep(POLL_INTERVAL);
-//			if(bw1.succeeded()) {
-//				Database.getBufferPool().transactionComplete(tid1);
-//			}
-//		}
-//
-//		// clean up
-//		bw1 = null;
-//	}
+	@Test
+	public void nextKeyLockingTestGreaterThan() throws Exception {
+		// This should create a B+ tree with 100 leaf pages
+		BPlusTreeFile bigFile = BPlusTreeUtility.createRandomBPlusTreeFile(2, 50200,
+				null, null, 0);
+		System.out.println("asdf");
+		// get a key from the middle of the root page
+		BPlusTreePageId rootPtrPid = new BPlusTreePageId(bigFile.getId(), 0, BPlusTreePageId.ROOT_PTR);
+		BPlusTreeRootPtrPage rootPtr = (BPlusTreeRootPtrPage) Database.getBufferPool().getPage(tid, rootPtrPid, Permissions.READ_ONLY);
+		BPlusTreePageId rootId = rootPtr.getRootId();
+		assertEquals(rootId.pgcateg(), BPlusTreePageId.INTERNAL);
+		BPlusTreeInternalPage root = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, rootId, Permissions.READ_ONLY);
+		int keyIndex = 50; // this should be right in the middle since there are 100 leaf pages
+		Iterator<BPlusTreeEntry> it = root.iterator();
+		Field key = null;
+		int count = 0;
+		while(it.hasNext()) {
+			BPlusTreeEntry e = it.next();
+			if(count == keyIndex) {
+				key = e.getKey();
+				break;
+			}
+			count++;
+		}
+		assertTrue(key != null);
+
+		// now find all tuples containing that key and delete them, as well as the previous key
+		IndexPredicate ipred = new IndexPredicate(Op.EQUALS, key);
+		DbFileIterator fit = bigFile.indexIterator(tid, ipred);
+		fit.open();
+		while(fit.hasNext()) {
+			Database.getBufferPool().deleteTuple(tid, fit.next());
+		}
+		fit.close();
+
+		count = 0;
+		while(count == 0) {
+			key = new IntField(((IntField) key).getValue() - 1);
+			ipred = new IndexPredicate(Op.EQUALS, key);
+			fit = bigFile.indexIterator(tid, ipred);
+			fit.open();
+			while(fit.hasNext()) {
+				Database.getBufferPool().deleteTuple(tid, fit.next());
+				count++;
+			}
+			fit.close();
+		}
+		System.out.println("asdf");
+		Database.getBufferPool().transactionComplete(tid);
+		tid = new TransactionId();
+
+		// search for tuples greater than or equal to the key
+		ipred = new IndexPredicate(Op.GREATER_THAN_OR_EQ, key);
+		fit = bigFile.indexIterator(tid, ipred);
+		fit.open();
+		int keyCountBefore = 0;
+		while(fit.hasNext()) {
+			fit.next();
+			keyCountBefore++;
+		}
+		fit.close();
+		System.out.println("asdf");
+		// In a different thread, try to insert tuples containing the key
+		TransactionId tid1 = new TransactionId();
+		BPlusTreeWriter bw1 = new BPlusTreeWriter(tid1, bigFile, ((IntField) key).getValue(), 1);
+		bw1.start();
+
+		// allow thread to start
+		Thread.sleep(POLL_INTERVAL);
+		System.out.println("asdf");
+		// search for tuples greater than or equal to the key
+		ipred = new IndexPredicate(Op.GREATER_THAN_OR_EQ, key);
+		fit = bigFile.indexIterator(tid, ipred);
+		fit.open();
+		int keyCountAfter = 0;
+		while(fit.hasNext()) {
+			fit.next();
+			keyCountAfter++;
+		}
+		fit.close();
+		System.out.println("asdf");
+		// make sure our indexIterator() is working
+		assertTrue(keyCountBefore > 0);
+
+		// check that we don't have any phantoms
+		assertEquals(keyCountBefore, keyCountAfter);
+		assertFalse(bw1.succeeded());
+
+		// now let the inserts happen
+		Database.getBufferPool().transactionComplete(tid);
+		System.out.println("asdf");
+		while(!bw1.succeeded()) {
+			Thread.sleep(POLL_INTERVAL);
+			if(bw1.succeeded()) {
+				Database.getBufferPool().transactionComplete(tid1);
+			}
+		}
+
+		// clean up
+		bw1 = null;
+	}
 
 	/**
 	 * JUnit suite target
