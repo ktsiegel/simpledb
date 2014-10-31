@@ -30,7 +30,7 @@ public class BufferPool {
     private ConcurrentHashMap<PageId, Page> pages;
     private ArrayList<PageId> lruCache;
     private ConcurrentHashMap<PageId, ArrayList<TransactionId>> pageLockTransactions;
-    private ConcurrentHashMap<PageId, Lock> sharedLocks;
+    private ConcurrentHashMap<PageId, ArrayList<Lock>> sharedLocks;
     private ConcurrentHashMap<PageId, Lock> exclusiveLocks;
     
     /** Default number of pages passed to the constructor. This is used by
@@ -50,7 +50,7 @@ public class BufferPool {
     	pages = new ConcurrentHashMap<PageId, Page>();
     	lruCache = new ArrayList<PageId>();
     	pageLockTransactions = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
-    	sharedLocks = new ConcurrentHashMap<PageId, Lock>();
+    	sharedLocks = new ConcurrentHashMap<PageId, ArrayList<Lock>>();
     	exclusiveLocks = new ConcurrentHashMap<PageId, Lock>();
     }
     
@@ -86,33 +86,34 @@ public class BufferPool {
     				// A lock currently exists on this page.
     				if (exclusiveLocks.containsKey(pid)) {
     					// If it's an exclusive lock, then check if it's within the same transaction.
-    					if (pageLockTransactions.get(pid).contains(tid) && pageLockTransactions.get(pid).size() == 1) {
-    						// Update lock status
-    						exclusiveLocks.remove(pid);
-    						sharedLocks.put(pid, new ReentrantLock());
-    						sharedLocks.get(pid).lock();
-    					} else {
-    						// If not part of the same transaction, then wait to acquire the lock.
-    						System.out.println("Trying to get read only lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
-    						try {
-        						exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
-        		            } catch (Exception e) {
-        		            	throw new TransactionAbortedException();
-        		            } finally {
-        		            	if (!exclusiveLocks.get(pid).tryLock()) {
-        		            		throw new TransactionAbortedException();
-        		            	}
-        		            	exclusiveLocks.get(pid).lock();
-        		            }
-    						System.out.println("Got read only lock");
-    					}
+    					try {
+    						exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
+    		            } catch (Exception e) {
+    		            	throw new TransactionAbortedException();
+    		            } finally {
+    		            	if (!exclusiveLocks.get(pid).tryLock()) {
+    		            		throw new TransactionAbortedException();
+    		            	}
+    		            	exclusiveLocks.get(pid).lock();
+    		            }
+    					if (!sharedLocks.contains(pid)) {
+							sharedLocks.put(pid, new ArrayList<Lock>());
+						}
+						sharedLocks.get(pid).add(exclusiveLocks.remove(pid));
+						if (!pageLockTransactions.get(pid).contains(tid)) {
+							pageLockTransactions.get(pid).add(tid);
+						}
     				} else { // It's ok if the lock is a shared lock
     					pageLockTransactions.get(pid).add(tid);
     				}
     			} else { 
     				// No lock on this page, so create a new lock and lock it.
-    				sharedLocks.put(pid, new ReentrantLock());
-    				sharedLocks.get(pid).lock();
+    				if (!sharedLocks.contains(pid)) {
+						sharedLocks.put(pid, new ArrayList<Lock>());
+					}
+    				Lock lock = new ReentrantLock();
+    				lock.lock();
+    				sharedLocks.get(pid).add(lock);
     				// Update which transaction holds a lock on this page.
     				if (!pageLockTransactions.contains(pid)) {
     					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
@@ -123,29 +124,32 @@ public class BufferPool {
     			if (pageLockTransactions.containsKey(pid)) {
     				// A lock exists on this page.
     				if (!exclusiveLocks.containsKey(pid) && sharedLocks.containsKey(pid)) {
-    					// If it is an exclusive lock, then check if it's the same transaction
-    					// and update the lock accordingly.
-    					Lock lock = sharedLocks.remove(pid);
-    					if (pageLockTransactions.get(pid).contains(tid) && pageLockTransactions.get(pid).size() == 1) {
-    						lock = new ReentrantLock();
+    					// If it is an exclusive lock, then update the lock accordingly.
+    					for (Lock lock : sharedLocks.get(pid)) {
+    						try {
+        						lock.tryLock(100, TimeUnit.MILLISECONDS);
+        		            } catch (Exception e) {
+        		            	throw new TransactionAbortedException();
+        		            } finally {
+        		            	if (!lock.tryLock()) {
+        		            		throw new TransactionAbortedException();
+        		            	}
+        		            	lock.lock();
+        		            }
     					}
-    					try {
-    						lock.tryLock(100, TimeUnit.MILLISECONDS);
-    		            } catch (Exception e) {
-    		            	throw new TransactionAbortedException();
-    		            } finally {
-    		            	if (!lock.tryLock()) {
-    		            		throw new TransactionAbortedException();
-    		            	}
-    		            	lock.lock();
-    		            }
+    					sharedLocks.remove(pid);
+    					pageLockTransactions.remove(pid);
+    					Lock lock = new ReentrantLock();
+    					lock.lock();
     					exclusiveLocks.put(pid, lock);
+    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
+    					pageLockTransactions.get(pid).add(tid);
     				}
     				// Acquire the exclusive lock.
     				if (exclusiveLocks.get(pid) != null) {
     					System.out.println("Trying to get read write lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
         				try {
-    						exclusiveLocks.get(pid).tryLock(10, TimeUnit.MILLISECONDS);
+    						exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
     		            } catch (Exception e) {
     		            	throw new TransactionAbortedException();
     		            } finally {
@@ -213,11 +217,14 @@ public class BufferPool {
     	synchronized (pageLockTransactions) {
     		if (holdsLock(tid, pid)) {
         		if (exclusiveLocks.containsKey(pid)) {
-        			System.out.println(exclusiveLocks.get(pid).toString());
+//        			System.out.println(exclusiveLocks.get(pid).toString());
         			exclusiveLocks.remove(pid).unlock();
         		} else if (sharedLocks.containsKey(pid)) {
-        			System.out.println(sharedLocks.get(pid).toString());
-        			sharedLocks.remove(pid).unlock();
+        			int index = pageLockTransactions.get(pid).indexOf(tid);
+//        			System.out.println(sharedLocks.get(pid).toString());
+        			if (index >= 0 && sharedLocks.get(pid).size() > index) {
+        				sharedLocks.get(pid).remove(index).unlock();
+        			}
         		}
         		pageLockTransactions.get(pid).remove(tid);
         		if (pageLockTransactions.get(pid).size() == 0) {
@@ -392,6 +399,9 @@ public class BufferPool {
         	}
         	pages.remove(pId);
         	lruCache.remove(pId);
+    	} else {
+    		throw new DbException("Can't find page to evict.");
     	}
+    	
     }
 }
