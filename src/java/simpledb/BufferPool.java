@@ -80,98 +80,104 @@ public class BufferPool {
      */
     public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-//    	synchronized (pageLockTransactions) {
-    		if (perm == Permissions.READ_ONLY) {
-    			if (pageLockTransactions.containsKey(pid)) {
-    				// A lock currently exists on this page.
-    				if (exclusiveLocks.containsKey(pid)) {
-    					// If it's an exclusive lock, then check if it's within the same transaction.
-    					try {
-    						exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
-    		            } catch (Exception e) {
-    		            	throw new TransactionAbortedException();
-    		            } finally {
-    		            	if (!exclusiveLocks.get(pid).tryLock()) {
-    		            		throw new TransactionAbortedException();
-    		            	}
-    		            	exclusiveLocks.get(pid).lock();
-    		            }
-    					if (!sharedLocks.contains(pid)) {
-							sharedLocks.put(pid, new ArrayList<Lock>());
-						}
-						sharedLocks.get(pid).add(exclusiveLocks.remove(pid));
-						if (!pageLockTransactions.get(pid).contains(tid)) {
-							pageLockTransactions.get(pid).add(tid);
-						}
-    				} else { // It's ok if the lock is a shared lock
-    					pageLockTransactions.get(pid).add(tid);
-    				}
-    			} else { 
-    				// No lock on this page, so create a new lock and lock it.
-    				if (!sharedLocks.contains(pid)) {
-						sharedLocks.put(pid, new ArrayList<Lock>());
-					}
-    				Lock lock = new ReentrantLock();
-    				lock.lock();
-    				sharedLocks.get(pid).add(lock);
-    				// Update which transaction holds a lock on this page.
-    				if (!pageLockTransactions.contains(pid)) {
-    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-    				}
-    				pageLockTransactions.get(pid).add(tid);
-    			}
-    		} else if (perm == Permissions.READ_WRITE) {
-    			if (pageLockTransactions.containsKey(pid)) {
-    				// A lock exists on this page.
-    				if (!exclusiveLocks.containsKey(pid) && sharedLocks.containsKey(pid)) {
-    					// If it is an exclusive lock, then update the lock accordingly.
-    					for (Lock lock : sharedLocks.get(pid)) {
-    						try {
-        						lock.tryLock(100, TimeUnit.MILLISECONDS);
-        		            } catch (Exception e) {
-        		            	throw new TransactionAbortedException();
-        		            } finally {
-        		            	if (!lock.tryLock()) {
-        		            		throw new TransactionAbortedException();
-        		            	}
-        		            	lock.lock();
-        		            }
-    					}
-    					sharedLocks.remove(pid);
-    					pageLockTransactions.remove(pid);
-    					Lock lock = new ReentrantLock();
-    					lock.lock();
-    					exclusiveLocks.put(pid, lock);
-    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-    					pageLockTransactions.get(pid).add(tid);
-    				}
-    				// Acquire the exclusive lock.
-    				if (exclusiveLocks.get(pid) != null) {
-    					System.out.println("Trying to get read write lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
-        				try {
-    						exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
-    		            } catch (Exception e) {
-    		            	throw new TransactionAbortedException();
-    		            } finally {
-    		            	if (!exclusiveLocks.get(pid).tryLock()) {
-    		            		throw new TransactionAbortedException();
-    		            	}
-    		            	exclusiveLocks.get(pid).lock();
-    		            }
-        				System.out.println("Acquired read write lock");
-    				}
-    			} else {
-    				// No lock exists on this page, so acquire one and lock.
-    				exclusiveLocks.put(pid, new ReentrantLock());
-    				exclusiveLocks.get(pid).lock();
-    				if (!pageLockTransactions.contains(pid)) {
-    					pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-    				}
-    				pageLockTransactions.get(pid).add(tid);
-    			}
-    		}
-//    	}
+    	if (perm == Permissions.READ_ONLY) {
+    		handleReadOnlyCase(tid, pid, perm);
+    	} else if (perm == Permissions.READ_WRITE) {
+    		handleReadWriteCase(tid, pid, perm);
+    	}
     	return getPageSynchronized(tid, pid, perm);
+    }
+    
+    public void handleReadOnlyCase(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException {
+    	if (pageLockTransactions.containsKey(pid)) {
+			// A lock currently exists on this page.
+			if (exclusiveLocks.containsKey(pid)) {
+				// If it's an exclusive lock, then check if it's within the same transaction.
+				try {
+					exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
+				} catch (Exception e) {
+					throw new TransactionAbortedException();
+				} finally {
+					if (!exclusiveLocks.get(pid).tryLock()) {
+						throw new TransactionAbortedException();
+					}
+					exclusiveLocks.get(pid).lock();
+				}
+				if (!sharedLocks.contains(pid)) {
+					sharedLocks.put(pid, new ArrayList<Lock>());
+				}
+				sharedLocks.get(pid).add(exclusiveLocks.remove(pid));
+				if (!pageLockTransactions.get(pid).contains(tid)) {
+					pageLockTransactions.get(pid).add(tid);
+				}
+			} else { // It's ok if the lock is a shared lock
+				pageLockTransactions.get(pid).add(tid);
+			}
+		} else { 
+			// No lock on this page, so create a new lock and lock it.
+			if (!sharedLocks.contains(pid)) {
+				sharedLocks.put(pid, new ArrayList<Lock>());
+			}
+			Lock lock = new ReentrantLock();
+			lock.lock();
+			sharedLocks.get(pid).add(lock);
+			// Update which transaction holds a lock on this page.
+			if (!pageLockTransactions.contains(pid)) {
+				pageLockTransactions.put(pid, new ArrayList<TransactionId>());
+			}
+			pageLockTransactions.get(pid).add(tid);
+		}
+    }
+    
+    public void handleReadWriteCase(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException {
+    	if (pageLockTransactions.containsKey(pid)) {
+			// A lock exists on this page.
+			if (!exclusiveLocks.containsKey(pid) && sharedLocks.containsKey(pid)) {
+				// If it is an exclusive lock, then update the lock accordingly.
+				for (Lock lock : sharedLocks.get(pid)) {
+					try {
+						lock.tryLock(100, TimeUnit.MILLISECONDS);
+					} catch (Exception e) {
+						throw new TransactionAbortedException();
+					} finally {
+						if (!lock.tryLock()) {
+							throw new TransactionAbortedException();
+						}
+						lock.lock();
+					}
+				}
+				sharedLocks.remove(pid);
+				pageLockTransactions.remove(pid);
+				Lock lock = new ReentrantLock();
+				lock.lock();
+				exclusiveLocks.put(pid, lock);
+				pageLockTransactions.put(pid, new ArrayList<TransactionId>());
+				pageLockTransactions.get(pid).add(tid);
+			}
+			// Acquire the exclusive lock.
+			if (exclusiveLocks.get(pid) != null) {
+				System.out.println("Trying to get read write lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
+				try {
+					exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
+				} catch (Exception e) {
+					throw new TransactionAbortedException();
+				} finally {
+					if (!exclusiveLocks.get(pid).tryLock()) {
+						throw new TransactionAbortedException();
+					}
+					exclusiveLocks.get(pid).lock();
+				}
+				System.out.println("Acquired read write lock");
+			}
+		} else {
+			// No lock exists on this page, so acquire one and lock.
+			exclusiveLocks.put(pid, new ReentrantLock());
+			exclusiveLocks.get(pid).lock();
+			if (!pageLockTransactions.contains(pid)) {
+				pageLockTransactions.put(pid, new ArrayList<TransactionId>());
+			}
+			pageLockTransactions.get(pid).add(tid);
+		}
     }
     
     public Page getPageSynchronized(TransactionId tid, PageId pid, Permissions perm)
