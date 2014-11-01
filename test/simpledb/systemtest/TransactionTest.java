@@ -206,25 +206,25 @@ public class TransactionTest extends SimpleDbTestBase {
         }
     }
     
-    @Test public void testSingleThread()
-            throws IOException, DbException, TransactionAbortedException {
-        validateTransactions(1);
-    }
-
-    @Test public void testTwoThreads()
-            throws IOException, DbException, TransactionAbortedException {
-        validateTransactions(2);
-    }
-
-    @Test public void testFiveThreads()
-            throws IOException, DbException, TransactionAbortedException {
-        validateTransactions(5);
-    }
-    
-    @Test public void testTenThreads()
-    throws IOException, DbException, TransactionAbortedException {
-        validateTransactions(10);
-    }
+//    @Test public void testSingleThread()
+//            throws IOException, DbException, TransactionAbortedException {
+//        validateTransactions(1);
+//    }
+//
+//    @Test public void testTwoThreads()
+//            throws IOException, DbException, TransactionAbortedException {
+//        validateTransactions(2);
+//    }
+//
+//    @Test public void testFiveThreads()
+//            throws IOException, DbException, TransactionAbortedException {
+//        validateTransactions(5);
+//    }
+//    
+//    @Test public void testTenThreads()
+//    throws IOException, DbException, TransactionAbortedException {
+//        validateTransactions(10);
+//    }
 
     @Test public void testAllDirtyFails()
             throws IOException, DbException, TransactionAbortedException {
