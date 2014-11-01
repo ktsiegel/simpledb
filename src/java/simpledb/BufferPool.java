@@ -29,9 +29,7 @@ public class BufferPool {
     /** Maps page IDs to actual Pages; holds all pages currently in buffer pool. */
     private ConcurrentHashMap<PageId, Page> pages;
     private ArrayList<PageId> lruCache;
-    private ConcurrentHashMap<PageId, ArrayList<TransactionId>> pageLockTransactions;
-    private ConcurrentHashMap<PageId, ArrayList<Lock>> sharedLocks;
-    private ConcurrentHashMap<PageId, Lock> exclusiveLocks;
+    private DbLock dbLock;
     
     /** Default number of pages passed to the constructor. This is used by
     other classes. BufferPool should use the numPages argument to the
@@ -49,9 +47,7 @@ public class BufferPool {
     	pageTotal = numPages;
     	pages = new ConcurrentHashMap<PageId, Page>();
     	lruCache = new ArrayList<PageId>();
-    	pageLockTransactions = new ConcurrentHashMap<PageId, ArrayList<TransactionId>>();
-    	sharedLocks = new ConcurrentHashMap<PageId, ArrayList<Lock>>();
-    	exclusiveLocks = new ConcurrentHashMap<PageId, Lock>();
+    	dbLock = new DbLock();
     }
     
     public static int getPageSize() {
@@ -78,110 +74,13 @@ public class BufferPool {
      * @param pid the ID of the requested page
      * @param perm the requested permissions on the page
      */
-    public synchronized Page getPage(TransactionId tid, PageId pid, Permissions perm)
+    public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
-    	if (perm == Permissions.READ_ONLY) {
-    		handleReadOnlyCase(tid, pid, perm);
-    	} else if (perm == Permissions.READ_WRITE) {
-    		handleReadWriteCase(tid, pid, perm);
-    	}
-    	return getPageSynchronized(tid, pid, perm);
-    }
-    
-    public void handleReadOnlyCase(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException {
-    	if (pageLockTransactions.containsKey(pid)) {
-			// A lock currently exists on this page.
-			if (exclusiveLocks.containsKey(pid)) {
-				// If it's an exclusive lock, then check if it's within the same transaction.
-				try {
-					exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
-				} catch (Exception e) {
-					throw new TransactionAbortedException();
-				} finally {
-					if (!exclusiveLocks.get(pid).tryLock()) {
-						throw new TransactionAbortedException();
-					}
-					exclusiveLocks.get(pid).lock();
-				}
-				if (!sharedLocks.contains(pid)) {
-					sharedLocks.put(pid, new ArrayList<Lock>());
-				}
-				sharedLocks.get(pid).add(exclusiveLocks.remove(pid));
-				if (!pageLockTransactions.get(pid).contains(tid)) {
-					pageLockTransactions.get(pid).add(tid);
-				}
-			} else { // It's ok if the lock is a shared lock
-				pageLockTransactions.get(pid).add(tid);
-			}
-		} else { 
-			// No lock on this page, so create a new lock and lock it.
-			if (!sharedLocks.contains(pid)) {
-				sharedLocks.put(pid, new ArrayList<Lock>());
-			}
-			Lock lock = new ReentrantLock();
-			lock.lock();
-			sharedLocks.get(pid).add(lock);
-			// Update which transaction holds a lock on this page.
-			if (!pageLockTransactions.contains(pid)) {
-				pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-			}
-			pageLockTransactions.get(pid).add(tid);
-		}
-    }
-    
-    public void handleReadWriteCase(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException {
-    	if (pageLockTransactions.containsKey(pid)) {
-			// A lock exists on this page.
-			if (!exclusiveLocks.containsKey(pid) && sharedLocks.containsKey(pid)) {
-				// If it is an exclusive lock, then update the lock accordingly.
-				for (Lock lock : sharedLocks.get(pid)) {
-					try {
-						lock.tryLock(100, TimeUnit.MILLISECONDS);
-					} catch (Exception e) {
-						throw new TransactionAbortedException();
-					} finally {
-						if (!lock.tryLock()) {
-							throw new TransactionAbortedException();
-						}
-						lock.lock();
-					}
-				}
-				sharedLocks.remove(pid);
-				pageLockTransactions.remove(pid);
-				Lock lock = new ReentrantLock();
-				lock.lock();
-				exclusiveLocks.put(pid, lock);
-				pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-				pageLockTransactions.get(pid).add(tid);
-			}
-			// Acquire the exclusive lock.
-			if (exclusiveLocks.get(pid) != null) {
-				System.out.println("Trying to get read write lock: " + exclusiveLocks.get(pid).toString() + " in transaction " + tid.toString());
-				try {
-					exclusiveLocks.get(pid).tryLock(100, TimeUnit.MILLISECONDS);
-				} catch (Exception e) {
-					throw new TransactionAbortedException();
-				} finally {
-					if (!exclusiveLocks.get(pid).tryLock()) {
-						throw new TransactionAbortedException();
-					}
-					exclusiveLocks.get(pid).lock();
-				}
-				System.out.println("Acquired read write lock");
-			}
-		} else {
-			// No lock exists on this page, so acquire one and lock.
-			exclusiveLocks.put(pid, new ReentrantLock());
-			exclusiveLocks.get(pid).lock();
-			if (!pageLockTransactions.contains(pid)) {
-				pageLockTransactions.put(pid, new ArrayList<TransactionId>());
-			}
-			pageLockTransactions.get(pid).add(tid);
-		}
-    }
-    
-    public Page getPageSynchronized(TransactionId tid, PageId pid, Permissions perm)
-            throws TransactionAbortedException, DbException {
+
+//  	System.out.println(perm.toString());
+    	this.dbLock.acquireLock(tid, pid, perm);
+    	
+    	
     	Page p;
     	if (pages.containsKey(pid)) {
     		// place at end of lruCache array
@@ -219,25 +118,8 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      * @param pid the ID of the page to unlock
      */
-    public synchronized void releasePage(TransactionId tid, PageId pid) {
-    	synchronized (pageLockTransactions) {
-    		if (holdsLock(tid, pid)) {
-        		if (exclusiveLocks.containsKey(pid)) {
-//        			System.out.println(exclusiveLocks.get(pid).toString());
-        			exclusiveLocks.remove(pid).unlock();
-        		} else if (sharedLocks.containsKey(pid)) {
-        			int index = pageLockTransactions.get(pid).indexOf(tid);
-//        			System.out.println(sharedLocks.get(pid).toString());
-        			if (index >= 0 && sharedLocks.get(pid).size() > index) {
-        				sharedLocks.get(pid).remove(index).unlock();
-        			}
-        		}
-        		pageLockTransactions.get(pid).remove(tid);
-        		if (pageLockTransactions.get(pid).size() == 0) {
-        			pageLockTransactions.remove(pid);
-        		}
-        	}
-    	}
+    public void releasePage(TransactionId tid, PageId pid) {
+    	this.dbLock.releasePage(tid, pid);
     }
 
     /**
@@ -246,18 +128,12 @@ public class BufferPool {
      * @param tid the ID of the transaction requesting the unlock
      */
     public void transactionComplete(TransactionId tid) throws IOException {
-    	synchronized (pageLockTransactions) {
-    		for (PageId p : pageLockTransactions.keySet()) {
-            	if (pageLockTransactions.get(p).contains(tid)) {
-            		this.releasePage(tid, p);
-            	}
-            }
-    	}
+    	this.dbLock.transactionComplete(tid);
     }
 
     /** Return true if the specified transaction has a lock on the specified page */
     public boolean holdsLock(TransactionId tid, PageId p) {
-    	return pageLockTransactions.containsKey(p) && pageLockTransactions.get(p).contains(tid);
+    	return this.dbLock.holdsLock(tid, p);
     }
 
     /**
