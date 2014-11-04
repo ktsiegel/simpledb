@@ -2,9 +2,6 @@ package simpledb;
 
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 public class DbLock {
 	private ConcurrentHashMap<PageId, ArrayList<TransactionId>> sharedLocks;
@@ -16,10 +13,6 @@ public class DbLock {
     }
     
     public void acquireLock(TransactionId tid, PageId pid, Permissions perm) throws TransactionAbortedException {
-    	System.out.println("shared locks: " + sharedLocks.toString());
-    	System.out.println("exclusive locks: " + exclusiveLocks.toString());
-    	System.out.println(perm.toString());
-    	System.out.println("acquire lock");
     	if (perm == Permissions.READ_ONLY) {
     		handleReadOnlyCase(tid, pid, perm);
     	} else if (perm == Permissions.READ_WRITE) {
@@ -72,35 +65,31 @@ public class DbLock {
     	}
     }
     
-    public void releasePage(TransactionId tid, PageId pid) {
-    	synchronized (this) { 
-    		if (exclusiveLocks.containsKey(pid)) {
-    			exclusiveLocks.remove(pid);
-    		}
-    		if (sharedLocks.containsKey(pid) && sharedLocks.get(pid).contains(tid)) {
-    			sharedLocks.get(pid).remove(tid);
-    			if (sharedLocks.get(pid).size() == 0) {
-    				sharedLocks.remove(pid);
-    			}
+    public synchronized void releasePage(TransactionId tid, PageId pid) {
+    	if (exclusiveLocks.containsKey(pid)) {
+    		exclusiveLocks.remove(pid);
+    	}
+    	if (sharedLocks.containsKey(pid) && sharedLocks.get(pid).contains(tid)) {
+    		sharedLocks.get(pid).remove(tid);
+    		if (sharedLocks.get(pid).size() == 0) {
+    			sharedLocks.remove(pid);
     		}
     	}
     }
     
-    public void transactionComplete(TransactionId tid) {
-    	synchronized (this) {
-    		for (PageId pid : exclusiveLocks.keySet()) {
-        		if (exclusiveLocks.get(pid).equals(tid)) {
-        			exclusiveLocks.remove(pid);
-        		}
-        	}
-    		for (PageId pid : sharedLocks.keySet()) {
-        		if (sharedLocks.get(pid).contains(tid)) {
-        			sharedLocks.get(pid).remove(tid);
-        		}
-        		if (sharedLocks.get(pid).size() == 0) {
-        			sharedLocks.remove(pid);
-        		}
-        	}
+    public synchronized void transactionComplete(TransactionId tid) {
+    	for (PageId pid : exclusiveLocks.keySet()) {
+    		if (exclusiveLocks.get(pid).equals(tid)) {
+    			exclusiveLocks.remove(pid);
+    		}
+    	}
+    	for (PageId pid : sharedLocks.keySet()) {
+    		if (sharedLocks.get(pid).contains(tid)) {
+    			sharedLocks.get(pid).remove(tid);
+    		}
+    		if (sharedLocks.get(pid).size() == 0) {
+    			sharedLocks.remove(pid);
+    		}
     	}
     }
     

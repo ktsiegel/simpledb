@@ -165,64 +165,64 @@ public class BPlusTreeFileInsertTest extends SimpleDbTestBase {
 
 	}
 
-//	@Test
-//	public void testSplitRootPage() throws Exception {
-//		// This should create a packed B+ tree with no empty slots
-//		// There are 503 keys per internal page (504 children) and 502 tuples per leaf page
-//		// 504 * 502 = 253008
-//		BPlusTreeFile bigFile = BPlusTreeUtility.createRandomBPlusTreeFile(2, 253008,
-//				null, null, 0);
-//
-//		// we will need more room in the buffer pool for this test
-//		Database.resetBufferPool(500);
-//
-//		// there should be 504 leaf pages + 1 internal node
-//		assertEquals(505, bigFile.numPages());
-//
-//		// now insert a tuple
-//		Database.getBufferPool().insertTuple(tid, bigFile.getId(), BPlusTreeUtility.getBPlusTreeTuple(10, 2));
-//
-//		// there should now be 505 leaf pages + 3 internal nodes
-//		assertEquals(508, bigFile.numPages());
-//
-//		// the root node should be an internal node and have 2 children (1 entry)
-//		BPlusTreePageId rootPtrPid = new BPlusTreePageId(bigFile.getId(), 0, BPlusTreePageId.ROOT_PTR);
-//		BPlusTreeRootPtrPage rootPtr = (BPlusTreeRootPtrPage) Database.getBufferPool().getPage(tid, rootPtrPid, Permissions.READ_ONLY);
-//		BPlusTreePageId rootId = rootPtr.getRootId();
-//		assertEquals(rootId.pgcateg(), BPlusTreePageId.INTERNAL);
-//		BPlusTreeInternalPage root = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, rootId, Permissions.READ_ONLY);
-//		assertEquals(502, root.getNumEmptySlots());
-//
-//		// each child should have half of the entries
-//		Iterator<BPlusTreeEntry> it = root.iterator();
-//		assertTrue(it.hasNext());
-//		BPlusTreeEntry e = it.next();
-//		BPlusTreeInternalPage leftChild = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, e.getLeftChild(), Permissions.READ_ONLY);
-//		BPlusTreeInternalPage rightChild = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, e.getRightChild(), Permissions.READ_ONLY);
-//		assertTrue(leftChild.getNumEmptySlots() <= 252);
-//		assertTrue(rightChild.getNumEmptySlots() <= 252);
-//
-//		// now insert some random tuples and make sure we can find them
-//		Random rand = new Random();
-//		for(int i = 0; i < 100; i++) {
-//			int item = rand.nextInt(BPlusTreeUtility.MAX_RAND_VALUE);
-//			Tuple t = BPlusTreeUtility.getBPlusTreeTuple(item, 2);
-//			Database.getBufferPool().insertTuple(tid, bigFile.getId(), t);
-//
-//			IndexPredicate ipred = new IndexPredicate(Op.EQUALS, t.getField(0));
-//			DbFileIterator fit = bigFile.indexIterator(tid, ipred);
-//			fit.open();
-//			boolean found = false;
-//			while(fit.hasNext()) {
-//				if(fit.next().equals(t)) {
-//					found = true;
-//					break;
-//				}
-//			}
-//			fit.close();
-//			assertTrue(found);
-//		}
-//	}
+	@Test
+	public void testSplitRootPage() throws Exception {
+		// This should create a packed B+ tree with no empty slots
+		// There are 503 keys per internal page (504 children) and 502 tuples per leaf page
+		// 504 * 502 = 253008
+		BPlusTreeFile bigFile = BPlusTreeUtility.createRandomBPlusTreeFile(2, 253008,
+				null, null, 0);
+
+		// we will need more room in the buffer pool for this test
+		Database.resetBufferPool(500);
+
+		// there should be 504 leaf pages + 1 internal node
+		assertEquals(505, bigFile.numPages());
+
+		// now insert a tuple
+		Database.getBufferPool().insertTuple(tid, bigFile.getId(), BPlusTreeUtility.getBPlusTreeTuple(10, 2));
+
+		// there should now be 505 leaf pages + 3 internal nodes
+		assertEquals(508, bigFile.numPages());
+
+		// the root node should be an internal node and have 2 children (1 entry)
+		BPlusTreePageId rootPtrPid = new BPlusTreePageId(bigFile.getId(), 0, BPlusTreePageId.ROOT_PTR);
+		BPlusTreeRootPtrPage rootPtr = (BPlusTreeRootPtrPage) Database.getBufferPool().getPage(tid, rootPtrPid, Permissions.READ_ONLY);
+		BPlusTreePageId rootId = rootPtr.getRootId();
+		assertEquals(rootId.pgcateg(), BPlusTreePageId.INTERNAL);
+		BPlusTreeInternalPage root = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, rootId, Permissions.READ_ONLY);
+		assertEquals(502, root.getNumEmptySlots());
+
+		// each child should have half of the entries
+		Iterator<BPlusTreeEntry> it = root.iterator();
+		assertTrue(it.hasNext());
+		BPlusTreeEntry e = it.next();
+		BPlusTreeInternalPage leftChild = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, e.getLeftChild(), Permissions.READ_ONLY);
+		BPlusTreeInternalPage rightChild = (BPlusTreeInternalPage) Database.getBufferPool().getPage(tid, e.getRightChild(), Permissions.READ_ONLY);
+		assertTrue(leftChild.getNumEmptySlots() <= 252);
+		assertTrue(rightChild.getNumEmptySlots() <= 252);
+
+		// now insert some random tuples and make sure we can find them
+		Random rand = new Random();
+		for(int i = 0; i < 100; i++) {
+			int item = rand.nextInt(BPlusTreeUtility.MAX_RAND_VALUE);
+			Tuple t = BPlusTreeUtility.getBPlusTreeTuple(item, 2);
+			Database.getBufferPool().insertTuple(tid, bigFile.getId(), t);
+
+			IndexPredicate ipred = new IndexPredicate(Op.EQUALS, t.getField(0));
+			DbFileIterator fit = bigFile.indexIterator(tid, ipred);
+			fit.open();
+			boolean found = false;
+			while(fit.hasNext()) {
+				if(fit.next().equals(t)) {
+					found = true;
+					break;
+				}
+			}
+			fit.close();
+			assertTrue(found);
+		}
+	}
 
 	@Test
 	public void testSplitInternalPage() throws Exception {

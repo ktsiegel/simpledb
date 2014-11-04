@@ -1361,7 +1361,6 @@ class BPlusTreeSearchIterator extends AbstractDbFileIterator {
 	 * for the given predicate operation
 	 */
 	public void open() throws DbException, TransactionAbortedException {
-		System.out.println("here");
 		BPlusTreeRootPtrPage rootPtr = (BPlusTreeRootPtrPage) Database.getBufferPool().getPage(
 				tid, BPlusTreeRootPtrPage.getId(f.getId()), Permissions.READ_ONLY);
 		BPlusTreePageId root = rootPtr.getRootId();
