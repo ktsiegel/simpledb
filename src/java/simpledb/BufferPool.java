@@ -270,7 +270,6 @@ public class BufferPool {
         		this.flushPage(pid);
         	}
         }
-//        this.transactionComplete(tid);
     }
 
     /**
