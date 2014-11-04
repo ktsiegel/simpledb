@@ -225,7 +225,7 @@ public class BPlusTreeFile implements DbFile {
         		return this.findLeafPage(tid, f, entry.getRightChild(), perm);
         	}
         }
-		return null;
+		throw new DbException("No page found.");
 	}
 
 	/**
@@ -383,7 +383,6 @@ public class BPlusTreeFile implements DbFile {
 			it.next();
 			index++;
 		}
-
 		// find the midpoint entry of the original page
 		BPlusTreeEntry midpoint = it.next();
 		index++;

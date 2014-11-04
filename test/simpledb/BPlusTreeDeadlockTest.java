@@ -113,7 +113,7 @@ public class BPlusTreeDeadlockTest extends SimpleDbTestBase {
 			Thread.sleep(POLL_INTERVAL);
 
 			if(writer1.succeeded() || writer2.succeeded()) break;
-
+			
 			if (writer1.getError() != null) {
 				writer1 = null;
 				bp.transactionComplete(tid1);

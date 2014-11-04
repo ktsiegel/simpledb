@@ -77,35 +77,36 @@ public class BufferPool {
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
         throws TransactionAbortedException, DbException {
 
-//  	System.out.println(perm.toString());
     	this.dbLock.acquireLock(tid, pid, perm);
     	
-    	
     	Page p;
-    	if (pages.containsKey(pid)) {
-    		// place at end of lruCache array
+    	synchronized (pages) {
     		synchronized (lruCache) {
-    			lruCache.remove(pid);
-        		lruCache.add(pid);
-        		p = pages.get(pid);
+    			if (pages.containsKey(pid) && lruCache.contains(pid)) {
+    	    		// place at end of lruCache array
+    	    		lruCache.remove(pid);
+    	    		lruCache.add(pid);
+    	    		p = pages.get(pid);
+    	    	} else {
+    	    		try {
+    	        		// fetch the database file--throws NoSuchElementException if the file is not there
+    	        		DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
+    	        		// fetch the page from the database file--throws IllegalArgumentException if the pid does not exist.
+    	        		p = file.readPage(pid);
+    	        		if (lruCache.size() == pageTotal) {
+    	        			evictPage();
+    	        		}
+    	        		pages.put(pid, p);
+    	        		lruCache.add(pid);
+    	        	} catch (NoSuchElementException e) {
+    	        		throw new DbException("No database file found.");
+    	        	} catch (IllegalArgumentException e) {
+    	        		throw new TransactionAbortedException();
+    	        	}
+    	    	}
     		}
-    	} else {
-    		try {
-        		// fetch the database file--throws NoSuchElementException if the file is not there
-        		DbFile file = Database.getCatalog().getDatabaseFile(pid.getTableId());
-        		// fetch the page from the database file--throws IllegalArgumentException if the pid does not exist.
-        		p = file.readPage(pid);
-        		if (lruCache.size() == pageTotal) {
-        			evictPage();
-        		}
-        		pages.put(pid, p);
-        		lruCache.add(pid);
-        	} catch (NoSuchElementException e) {
-        		throw new DbException("No database file found.");
-        	} catch (IllegalArgumentException e) {
-        		throw new TransactionAbortedException();
-        	}
     	}
+    	
     	return p;
     }
 
@@ -146,14 +147,23 @@ public class BufferPool {
     public void transactionComplete(TransactionId tid, boolean commit)
         throws IOException {
         if (commit) {
-        	this.flushPages(tid);
+        	for (PageId p : this.pages.keySet()) {
+        		Page page = this.pages.get(p);
+            	if (page.isDirty() == tid) {
+            		this.flushPage(p);
+            		page.setBeforeImage();
+            	}
+            }
+        } else {
+        	for (PageId p : this.pages.keySet()) {
+        		Page page = this.pages.get(p);
+            	if (page.isDirty() == tid) {
+            		this.pages.put(p, page.getBeforeImage());
+            		page.markDirty(false, null);
+            	}
+            }
         }
         this.transactionComplete(tid);
-        for (PageId p : this.pages.keySet()) {
-        	if (this.pages.get(p).isDirty() == tid) {
-        		this.discardPage(p);
-        	}
-        }
     }
 
     /**
@@ -260,6 +270,7 @@ public class BufferPool {
         		this.flushPage(pid);
         	}
         }
+//        this.transactionComplete(tid);
     }
 
     /**
@@ -267,23 +278,25 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-    	PageId pId = this.lruCache.get(0);
-    	int index = 1;
-    	while (this.pages.get(pId).isDirty() != null && index < this.lruCache.size()) {
-    		pId = this.lruCache.get(index);
-    		index++;
-    	}
-    	if (this.pages.get(pId).isDirty() == null) {
-    		try {
-        		this.flushPage(pId);
-        	} catch (IOException e) { 
-        		e.printStackTrace();
+    	boolean evictedPage = false;
+    	if (lruCache.size() > 0) {
+    		PageId pId = this.lruCache.get(0);
+        	int index = 1;
+        	while (this.pages.get(pId).isDirty() != null && index < this.lruCache.size()) {
+        		pId = this.lruCache.get(index);
+        		index++;
         	}
-        	pages.remove(pId);
-        	lruCache.remove(pId);
-    	} else {
-    		throw new DbException("Can't find page to evict.");
+        	if (this.pages.get(pId).isDirty() == null) {
+        		try {
+            		this.flushPage(pId);
+            	} catch (IOException e) { 
+            		e.printStackTrace();
+            	}
+            	pages.remove(pId);
+            	lruCache.remove(pId);
+            	evictedPage = true;
+        	} 
     	}
-    	
+    	if (!evictedPage) throw new DbException("Can't find page to evict.");
     }
 }
